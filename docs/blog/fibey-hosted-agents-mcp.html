@@ -1,0 +1,239 @@
+<body>
+<h1 id="microsoft-foundry-hosted-agents-and-mcp-in-practice-building-fibey-field-ops">Microsoft Foundry Hosted Agents and MCP in Practice: Building Fibey Field Ops</h1>
+<p>An agent can produce a convincing answer while the system around it is still difficult to deploy, authorize, debug, and recover. For AI engineers and developers, that is often the real gap between a promising prototype and an application people can depend on.</p>
+<p>Fibey Field Ops makes that gap concrete. It is a synthetic fiber-operations assistant built with Microsoft Foundry Hosted Agents, Model Context Protocol (MCP), and Azure Container Apps. This walkthrough follows one field-service task through the implementation, then examines the deployment and operational decisions behind it.</p>
+<h2 id="introduction-the-application-is-more-than-the-model">Introduction: the application is more than the model</h2>
+<p>Imagine a technician preparing a fiber work order. Before leaving the depot, they need the job details, available parts, relevant procedures, and network status. Those facts belong to different systems. A useful assistant must retrieve them, combine them, and explain what is missing without inventing an answer.</p>
+<p>The challenge is not simply selecting a capable model. It is establishing reliable contracts between the model, its tools, the hosting platform, and the application. Fibey demonstrates those contracts with <strong>one hosted agent, five instruction skills, eleven operational tools, and five supporting Container Apps</strong>.</p>
+<p>There is an important qualification: Fibey is a protected, synthetic-data demonstration, not a production-ready field-service system. Its gateway mappings and work orders remain in memory, and it does not enforce per-user session ownership or approval of operational writes. Those limitations are useful teaching material rather than details to hide.</p>
+<p>The <a href="https://github.com/leestott/fibey-toolbox-demo">Fibey repository</a> contains the implementation, infrastructure, documentation, and presentation deck. Repository access depends on its permissions.</p>
+<h2 id="1-separate-reasoning-instructions-and-tool-execution">1. Separate reasoning, instructions, and tool execution</h2>
+<p>MCP is a standard interface for discovering and invoking tools. In Fibey, the agent connects to one Microsoft Foundry Toolbox MCP endpoint. The toolbox exposes capabilities backed by an inventory MCP server, a work-orders OpenAPI service, and a Search knowledge base.</p>
+<p>That common interface does not make the underlying systems identical. OpenAPI still describes an HTTP API, inventory still implements MCP, and knowledge retrieval still depends on indexed documents. The toolbox centralizes the agent-facing integration and connection configuration while preserving those implementation choices.</p>
+<p>Four terms describe different responsibilities:</p>
+<table>
+<thead>
+<tr>
+<th>Concept</th>
+<th>Responsibility in Fibey</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Agent</td>
+<td>Classifies the request, loads instructions, selects tools, and constructs the response</td>
+</tr>
+<tr>
+<td>Skill</td>
+<td>An instruction document for a task such as inventory lookup or field briefing</td>
+</tr>
+<tr>
+<td>Tool</td>
+<td>An operation with an advertised input schema and a result</td>
+</tr>
+<tr>
+<td>Toolbox</td>
+<td>The curated MCP surface and references to downstream connections</td>
+</tr>
+</tbody>
+</table>
+<p>Fibey's five skills cover inventory lookup, work-order management, knowledge retrieval, work-order preparation, and field briefings. The last two coordinate several tools; they do not create additional agents.</p>
+<p>The configured toolbox exposes eleven operational tools directly: six inventory/status operations, four work-order operations, and one knowledge-retrieval operation. The agent uses their actual names and schemas. Discovery wrappers such as <code>tool_search</code> and <code>call_tool</code> are relevant only when a toolbox exposes them; they are not mandatory steps before every call.</p>
+<p>This distinction matters when debugging. A missing wrapper is not necessarily a broken integration. A skill mentioning a capability is also not proof that the runtime can invoke it. The current tool schema is the executable contract.</p>
+<h2 id="2-follow-the-hosted-azure-architecture">2. Follow the hosted Azure architecture</h2>
+<p>Microsoft Foundry hosts the agent container and exposes its endpoint. Azure Container Apps (ACA) hosts the application services around it. The deployment source of truth is <code>azure.yaml</code>, which declares the GPT-5.4-mini model deployment and the hosted agent's Responses <code>2.0.0</code> protocol.</p>
+<p>The design keeps the browser-facing application separate from agent execution and backend integration. That makes it easier to inspect each boundary, but it does not make the whole deployment private or remove the need for application authorization.</p>
+<p>Treat GPT-5.4-mini as the sample's configured baseline, not a claim that it is optimal for every workload. When evaluating another model, measure tool-selection accuracy, schema compliance, grounded answers, latency, and cost per completed task rather than choosing from a fluent demo response alone.</p>
+<p><img alt="Fibey hosted Azure architecture showing the UI, internal gateway, Foundry agent and toolbox, operational services, Search, Blob Storage, registry, and monitoring." src="../images/fibey-hosted-architecture.png"/></p>
+<p>The <a href="../architecture.md">engineering architecture</a> expands this presentation view with resource ownership, identities, configuration, and telemetry paths.</p>
+<h3 id="the-application-request-path">The application request path</h3>
+<p>The browser signs in through Microsoft Entra ID at the UI's ACA authentication boundary. An explicit allowlist restricts access to the intended user. Nginx serves the React application and proxies chat requests to the internal FastAPI gateway.</p>
+<p>The gateway invokes the Foundry-hosted agent using its managed identity. Server-sent events (SSE), a streaming HTTP format, carry answer text, tool activity, citations, failures, and completion back to the UI.</p>
+<p>Gateway and dashboard ingress are internal to the ACA environment. Inventory and work orders have external ingress so the toolbox can reach them, but their operational endpoints require separate API keys. External accessibility is not anonymous access, and internal ingress is not a complete network-isolation strategy.</p>
+<h3 id="the-knowledge-and-status-paths">The knowledge and status paths</h3>
+<p>The knowledge pipeline starts with eight Markdown documents in the repository. A setup script uploads them to a private Blob Storage container, configures a Search data source and indexer, verifies ingestion, and creates the knowledge source and knowledge base used by Foundry IQ.</p>
+<p>This is not an embedding pipeline assembled implicitly by the chat application. The current configuration uses minimal reasoning and extractive retrieval, with defaults of three output documents and 6,000 output tokens. Its knowledge-base configuration and MCP endpoint use preview APIs, which need lifecycle and support review before production adoption.</p>
+<p>Network status takes a different path. Inventory's <code>get_network_status</code> tool reads the configured internal HTML dashboard. It is a narrow HTTP fetch, not browser automation, arbitrary website navigation, or a real operational clearance.</p>
+<p>Azure Container Registry supplies container images. ACA logs go to Log Analytics. Hosted code enables OpenTelemetry, the standard instrumentation framework for traces and metrics, but the repository does not provision Application Insights. The project's linked trace destination must be configured and verified separately.</p>
+<h2 id="3-trace-a-work-order-briefing-through-the-implementation">3. Trace a work-order briefing through the implementation</h2>
+<p>The most useful demonstration starts with one concrete request: prepare a technician for a job. The <code>field-briefing</code> skill provides the instructions for combining work-order data, inventory, procedures, and status without pretending that one backend contains everything.</p>
+<p>Use a request such as the following in a prepared synthetic environment. The exact wording and tool order may vary; the important evidence is which operations succeeded and which facts support the answer.</p>
+<blockquote>
+<p>Brief me on WO-007, including stock, relevant procedures, safety, and network status.</p>
+</blockquote>
+<p>The intended flow is:</p>
+<ol>
+<li>Load the field-briefing instructions and retrieve WO-007.</li>
+<li>Identify required parts and use a batch stock check when several parts need checking.</li>
+<li>Combine procedure and safety questions into one focused knowledge retrieval.</li>
+<li>Read the configured synthetic status dashboard through inventory MCP.</li>
+<li>Produce a briefing grounded in successful results, with source references and explicit gaps.</li>
+</ol>
+<p>Batching is a useful engineering choice, not a claim of a measured performance improvement. One batch stock call avoids unnecessary repeated requests. Combining related retrieval questions can also reduce duplicate context and tool traffic.</p>
+<p><img alt="The deployed Fibey application showing a synthetic WO-007 field briefing, parts checklist, source references, and tool activity sidebar." src="../images/fibey-live-app.jpg"/></p>
+<p>This screenshot was captured from an authenticated deployment on September 17, 2026. The displayed briefing identifies an unavailable connector kit and available test equipment. It illustrates a specific synthetic response, not current stock or a benchmark.</p>
+<h3 id="use-the-supported-hosted-integration">Use the supported hosted integration</h3>
+<p>The relevant implementation is <a href="../../src/fibey/agent/hosted.py">the hosted entrypoint</a>. It uses <code>FoundryToolbox</code> from <code>agent_framework_foundry_hosting</code>, a <code>FoundryChatClient</code>, a skills provider, and <code>ResponsesHostServer.run_async()</code>.</p>
+<p>The hosting helper does more than attach a bearer token. It authenticates MCP requests and forwards the hosted runtime's per-request call ID. Replacing it with a generic transport can lose context that the platform expects. The entrypoint also closes credentials and clients when execution exits.</p>
+<p>Hosted skill discovery prefers published skills when available and retains bundled instructions as a fallback in <code>auto</code> mode. Explicit <code>mcp</code> mode fails if published skills cannot be loaded; <code>file</code> mode uses the bundled documents. This makes the fallback intentional rather than silently running without the task instructions.</p>
+<h3 id="distinguish-history-from-compute-affinity">Distinguish history from compute affinity</h3>
+<p>The gateway maintains two hosted mappings. <code>previous_response_id</code> links conversation history, while <code>agent_session_id</code> preserves affinity to the hosted compute session. Losing one is not equivalent to losing the other.</p>
+<p>Both mappings are held in gateway memory, which is why it remains at one replica. A UUID (universally unique identifier) is a conversation handle, not proof of ownership. Reset clears the local mappings but does not reset work orders or delete the old remote compute session.</p>
+<p>There is also a privacy distinction between storage and telemetry. Gateway requests use stored Responses history, while the agent's model-call options use <code>store: false</code>. Sensitive tracing being disabled does not mean all conversation persistence is disabled.</p>
+<h2 id="4-run-locally-without-confusing-development-and-cloud-boundaries">4. Run locally without confusing development and cloud boundaries</h2>
+<p>Local development is useful for inspecting the gateway and agent without rebuilding the hosted image. It still calls a real Foundry project, model, and toolbox. It is not an offline simulation, and tool writes can affect the configured synthetic backend.</p>
+<p>Use Python 3.12+, uv, Node.js 24 LTS, and an authorized Azure developer identity. The commands below run from the repository root in PowerShell. Keep the existing dependency locks and copy <code>.env.example</code> only when creating a new local configuration.</p>
+<pre><code>uv sync --frozen
+Copy-Item .env.example .env</code></pre>
+<p>Set <code>FOUNDRY_PROJECT_ENDPOINT</code>, <code>FOUNDRY_MODEL</code>, and <code>TOOLBOX_MCP_URL</code> in the ignored <code>.env</code>. Use your environment's actual values. Backend API keys belong in Foundry connections, not in the browser or prompts.</p>
+<p>Start the gateway:</p>
+<pre><code>az login
+uv run --frozen uvicorn fibey.gateway.api_server:app --host 127.0.0.1 --port 8080</code></pre>
+<p>In another terminal, start the UI:</p>
+<pre><code>Set-Location ui
+npm ci
+npm run dev</code></pre>
+<p>Open <code>http://localhost:5173</code>. Vite forwards <code>/api</code> to the gateway on port 8080. These development servers do not reproduce the cloud Entra boundary, and a cloud toolbox cannot reach your workstation's <code>localhost</code>.</p>
+<h3 id="inspect-the-api-progressively">Inspect the API progressively</h3>
+<p>With the local gateway running, start with a health request in a separate PowerShell terminal:</p>
+<pre><code>$base = "http://127.0.0.1:8080"
+Invoke-RestMethod "$base/api/health"</code></pre>
+<p>Next, create a UUID conversation and submit one synthetic request:</p>
+<pre><code>$session = [guid]::NewGuid().ToString()
+$body = @{ message = "Show me WO-007."; session_id = $session } | ConvertTo-Json -Compress
+$response = Invoke-WebRequest "$base/api/chat" -Method Post -ContentType "application/json" -Body $body
+$response.Headers["X-Session-Id"]
+$response.Content</code></pre>
+<p>This prints the completed SSE body rather than animating the stream. Reuse the same session for a follow-up by extracting a small helper:</p>
+<pre><code>function Invoke-FibeyTurn {
+    param([string] $Message, [string] $SessionId)
+    $payload = @{ message = $Message; session_id = $SessionId } | ConvertTo-Json -Compress
+    $result = Invoke-WebRequest "$base/api/chat" -Method Post `
+        -ContentType "application/json" -Body $payload
+    return $result.Content
+}
+Invoke-FibeyTurn -Message "What parts does that work order need?" -SessionId $session</code></pre>
+<p>The helper uses <code>$base</code> and <code>$session</code> from the preceding examples. It makes continuity explicit without hiding the API contract. The browser remains the better place to watch incremental text and activity. See <a href="../local-development.md">local development</a> for reset behavior and supporting-service details.</p>
+<h2 id="5-deploy-artifacts-and-infrastructure-together">5. Deploy artifacts and infrastructure together</h2>
+<p>Fibey's initial deployment is intentionally staged. A container image, its target port, its health probes, its registry association, and its runtime permissions must agree. Successfully building an image does not establish that agreement.</p>
+<p>The first supporting-infrastructure pass creates placeholder apps on port 80. Once all five real images have been published, a second pass applies the images with their application ports and probes. Plain <code>azd deploy</code> of a supporting service is not the initial port-switch mechanism for this sample.</p>
+<p>The <a href="../../deployment_guide.md">deployment guide</a> gives the complete sequence and prerequisites:</p>
+<ol>
+<li>Select the intended environment and provision the Foundry layer.</li>
+<li>Configure project aliases, the Entra application, the allowed user, and separate API keys.</li>
+<li>Provision placeholder supporting apps and verify scoped access and registry identity associations.</li>
+<li>Publish all five supporting images and confirm every image setting is populated.</li>
+<li>Provision supporting infrastructure again to apply the matching images, ports, and probes.</li>
+<li>Run knowledge setup, then toolbox setup.</li>
+<li>Deploy <code>fibey-agent</code> and perform protected-path acceptance checks.</li>
+</ol>
+<p>For example, this publication step comes after placeholders and access checks, not at the start of an unconfigured environment:</p>
+<pre><code>azd publish status-dashboard
+azd publish inventory-mcp
+azd publish work-orders-api
+azd publish gateway
+azd publish ui</code></pre>
+<p>Only after all five <code>SERVICE_*_IMAGE_NAME</code> settings exist should the next <code>azd provision infra</code> apply them. Keep those settings: an empty value selects a placeholder again.</p>
+<p>This is where DevOps becomes tangible. Review source, Bicep, locks, schemas, skills, and configuration together; record accepted image references, model configuration, toolbox version, and hosted-agent version. GitOps adds controlled reconciliation of reviewed desired state. The repository supplies the ingredients, not an existing CI/CD pipeline or GitOps controller.</p>
+<p>Toolbox promotion deserves the same discipline. The unversioned consumer endpoint follows the published default version. A version-specific developer endpoint can test a candidate before promotion. Updating a shared connection or default can affect consumers without rebuilding their images, so Git history alone is not a rollback mechanism.</p>
+<h2 id="6-treat-governance-observability-and-scale-as-separate-concerns">6. Treat governance, observability, and scale as separate concerns</h2>
+<p>Role-based access control (RBAC) grants an identity permission at a resource scope. The control plane creates and configures Azure resources; the data plane performs application work such as invoking agents, querying Search, or reading blobs.</p>
+<p>The identities used across those operations are not interchangeable. In particular, a successful UI login is not automatic end-user identity passthrough to every tool, and resource provisioning permissions do not establish all runtime permissions.</p>
+<table>
+<thead>
+<tr>
+<th>Boundary</th>
+<th>Identity or credential</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Browser to UI</td>
+<td>Entra user, application registration, and user allowlist</td>
+</tr>
+<tr>
+<td>Gateway to Foundry</td>
+<td>Gateway managed identity with project-scoped invocation access</td>
+</tr>
+<tr>
+<td>Hosted agent to model and toolbox</td>
+<td>Foundry-provided runtime agent identity</td>
+</tr>
+<tr>
+<td>Toolbox to inventory and work orders</td>
+<td>Separate API keys stored in project connections</td>
+</tr>
+<tr>
+<td>Toolbox to Search knowledge base</td>
+<td>Foundry project managed identity</td>
+</tr>
+<tr>
+<td>Search indexer to documents</td>
+<td>Search managed identity with Blob reader access</td>
+</tr>
+</tbody>
+</table>
+<p>Image delivery adds another boundary: each supporting app needs both <code>AcrPull</code> and a registry association selecting its identity. The Foundry project identity used for infrastructure operations is also distinct from the hosted agent's runtime identity.</p>
+<h3 id="approval-must-exist-outside-the-prompt">Approval must exist outside the prompt</h3>
+<p>Fibey's synthetic work-order writes run without an enforced human approval round trip. That is appropriate to understand in a disposable demo and inappropriate to conceal when discussing production.</p>
+<p>The <a href="https://learn.microsoft.com/azure/foundry/agents/how-to/tools/use-toolbox-hosted-agent">hosted toolbox documentation</a> is explicit: approval metadata alone does not block <code>tools/call</code>. The runtime must pause, collect a decision, and resume or reject the exact proposed operation. A prompt saying "ask first" is not equivalent to that control.</p>
+<p>Real writes need server-side authorization, approval tied to the arguments, idempotency, and a durable audit record. If a write's response is uncertain, read its state before retrying. Treat tool results as untrusted data rather than instructions.</p>
+<h3 id="debug-the-boundary-that-failed">Debug the boundary that failed</h3>
+<p>The activity sidebar makes tool use visible, but it is not a durable audit log or access to the model's hidden reasoning. Combine it with timestamps, request/session identifiers, ACA logs, and configured hosted traces.</p>
+<p>Keep sensitive message tracing off unless a controlled investigation explicitly requires it. Verify that a synthetic trace reaches the intended sink; enabled instrumentation alone does not prove ingestion.</p>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>First checks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>UI returns 502</td>
+<td>Gateway revision, target port, fixed Nginx upstream, SNI, and certificate trust</td>
+</tr>
+<tr>
+<td>Agent or tool returns 401/403</td>
+<td>Identity, token audience, role scope, and downstream connection credential</td>
+</tr>
+<tr>
+<td>Knowledge retrieval fails</td>
+<td>Indexer completion, project Search role, API version, and advertised input schema</td>
+</tr>
+<tr>
+<td>Briefing receives 429</td>
+<td>Model quota, concurrency, retrieval budgets, and repeated tool calls</td>
+</tr>
+<tr>
+<td>Stream ends early</td>
+<td>Terminal response event, timeout, malformed SSE, and transport failure</td>
+</tr>
+</tbody>
+</table>
+<p>The gateway must surface failed or truncated streams rather than treating partial text as a completed action. A final stream terminator after an error is not application success.</p>
+<h3 id="scale-only-after-identifying-state-and-capacity-limits">Scale only after identifying state and capacity limits</h3>
+<p>Foundry manages hosted runtime capabilities, but it does not externalize Fibey's gateway mappings or in-memory work orders. Adding replicas before redesigning that state would undermine continuity and consistent updates.</p>
+<p>Model throughput, hosted compute, downstream API capacity, Search, and ACA are separate constraints. Measure latency, errors, tokens, tool counts, and recovery under concurrent load. Registry storage/builds, model inference, compute, Search, Blob Storage, and telemetry all have costs; using a managed platform does not remove the need for budgets.</p>
+<h2 id="7-evaluate-the-result-before-adding-more-agents">7. Evaluate the result before adding more agents</h2>
+<p>The practical result is an inspectable workflow that combines heterogeneous systems into a grounded response. We can demonstrate inventory lookup, a synthetic work order, cited knowledge, a fixed status fetch, and a combined briefing through one agent-facing toolbox.</p>
+<p>That is functional evidence, not a production certification or benchmark. This post does not establish latency percentiles, cost per successful task, throughput, or availability under load. Those measurements should be acceptance criteria for an adaptation, not numbers inferred from a screenshot.</p>
+<p>Multi-agent coordination is a possible next design, not deployed Fibey behavior. A coordinator could delegate read-only inventory and procedure tasks while a restricted specialist handles approved writes. Each handoff would need typed inputs/results, correlation IDs, deadlines, cancellation, and budgets.</p>
+<p>Sharing a toolbox alone does not implement that coordination. Specialists also introduce additional failure paths, identity decisions, and state. Start with them only when task complexity, ownership, or isolation requirements justify the cost. The current five skills already provide modular instructions without creating five independently operated agents.</p>
+<h2 id="8-summary-reuse-the-engineering-boundaries">8. Summary: reuse the engineering boundaries</h2>
+<p>Fibey's reusable pattern is the separation of model reasoning, task instructions, tool contracts, hosted execution, and operational controls. MCP gives the agent a common tool interface; Foundry supplies managed hosting and integration capabilities. The application team remains responsible for the guarantees around its data and actions.</p>
+<p>Start with one workflow and verify each boundary. Then add durable state, per-user authorization, enforced approvals, secret rotation, appropriate networking, evaluation, and recovery before introducing real operational data or more autonomous behavior.</p>
+<p>For a practical starting point, use the <a href="https://github.com/leestott/fibey-toolbox-demo">repository</a>, follow the <a href="../../deployment_guide.md">deployment guide</a>, and reproduce the <a href="../session-overview.md">session walkthrough</a> with synthetic data. The <a href="../slides/fibey-hosted-agents-mcp.pptx">presentation deck</a> provides the same architecture and demo sequence for a team discussion.</p>
+<h2 id="references">References</h2>
+<p>The repository describes what this sample implements. Microsoft documentation describes the surrounding platform capabilities, responsibilities, and supported integration contracts.</p>
+<p>Read both before adapting the solution, especially where preview APIs, identity behavior, or approval enforcement affect your requirements.</p>
+<ul>
+<li><a href="https://github.com/leestott/fibey-toolbox-demo">Fibey Field Ops repository</a></li>
+<li><a href="../architecture.md">Fibey engineering architecture</a></li>
+<li><a href="../../deployment_guide.md">Fibey deployment guide</a></li>
+<li><a href="../toolbox-integration.md">Fibey toolbox integration</a></li>
+<li><a href="https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agents">Microsoft Foundry hosted agents</a></li>
+<li><a href="https://learn.microsoft.com/azure/foundry/agents/how-to/tools/use-toolbox-hosted-agent">Use a toolbox with a hosted agent</a></li>
+<li><a href="https://github.com/microsoft-foundry/foundry-samples/tree/main/samples/python/hosted-agents/agent-framework/responses/04-foundry-toolbox">Official Python hosted-agent toolbox sample</a></li>
+</ul>
+</body>

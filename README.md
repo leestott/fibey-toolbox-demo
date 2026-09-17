@@ -59,6 +59,8 @@ The [session walkthrough](docs/session-overview.md) maps these topics to specifi
 
 The [16-slide PowerPoint deck](docs/slides/fibey-hosted-agents-mcp.pptx) includes the hosted Azure architecture on slide 9 immediately before the demo, and the actual app screenshot on slide 10. It also covers Fibey prompts, deployment, identity boundaries, production gaps, and speaker notes. It adapts the supplied Foundry capabilities presentation; retained recording links are background references, not evidence of the current deployment.
 
+For a technical walkthrough aimed at AI engineers and developers, read the blog post in [Markdown](docs/blog/fibey-hosted-agents-mcp.md) or [plain HTML](docs/blog/fibey-hosted-agents-mcp.html).
+
 | Topic | Concrete teaching point |
 |---|---|
 | Standardized, composable tools | One MCP toolbox exposes six inventory/status tools, four OpenAPI operations, and one knowledge-retrieval tool |
