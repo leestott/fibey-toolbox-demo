@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FiberNet Operations Dashboard</title>
+    <script>
+      (() => {
+        const param = new URLSearchParams(window.location.search).get("clawpilotTheme");
+        const theme =
+          param || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        document.documentElement.setAttribute("data-theme", theme);
+      })();
+    </script>
+    <style>
+      :root {
+        color-scheme: light;
+        --cp-bg: #f7f4ef;
+        --cp-bg-elevated: #fcfbf8;
+        --cp-surface: #ffffff;
+        --cp-surface-soft: #f5f5f5;
+        --cp-border: #dedede;
+        --cp-border-strong: #919191;
+        --cp-text: #242424;
+        --cp-text-muted: #5c5c5c;
+        --cp-text-soft: #6f6f6f;
+        --cp-accent: #b11f4b;
+        --cp-accent-hover: #9a1a41;
+        --cp-accent-soft: rgba(177, 31, 75, 0.08);
+        --cp-accent-fg: #ffffff;
+        --cp-success: #16a34a;
+        --cp-danger: #dc2626;
+        --cp-warning: #f59e0b;
+        --cp-link: #0078d4;
+        --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.12);
+        --cp-overlay: rgba(255, 255, 255, 0.8);
+        --cp-panel: rgba(255, 255, 255, 0.86);
+        --cp-panel-strong: rgba(255, 255, 255, 0.96);
+        --cp-sheen: rgba(255, 255, 255, 0.55);
+        --cp-highlight: rgba(177, 31, 75, 0.12);
+      }
+      html[data-theme="dark"] {
+        color-scheme: dark;
+        --cp-bg: #3d3b3a;
+        --cp-bg-elevated: #343231;
+        --cp-surface: #292929;
+        --cp-surface-soft: #2e2e2e;
+        --cp-border: #474747;
+        --cp-border-strong: #5f5f5f;
+        --cp-text: #dedede;
+        --cp-text-muted: #919191;
+        --cp-text-soft: #b0b0b0;
+        --cp-accent: #fd8ea1;
+        --cp-accent-hover: #fb7b91;
+        --cp-accent-soft: rgba(253, 142, 161, 0.14);
+        --cp-accent-fg: #1a1a1a;
+        --cp-success: #4ade80;
+        --cp-danger: #f87171;
+        --cp-warning: #fbbf24;
+        --cp-link: #4da6ff;
+        --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+        --cp-overlay: rgba(41, 41, 41, 0.88);
+        --cp-panel: rgba(41, 41, 41, 0.72);
+        --cp-panel-strong: rgba(41, 41, 41, 0.96);
+        --cp-sheen: rgba(255, 255, 255, 0.04);
+        --cp-highlight: rgba(253, 142, 161, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Segoe UI", Aptos, Calibri, -apple-system, BlinkMacSystemFont, sans-serif;
+        background: var(--cp-bg);
+        color: var(--cp-text);
+      }
+
+      .page {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+
+      .dashboard-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+
+      .dashboard-header h1 {
+        margin: 0 0 8px;
+        font-size: 2rem;
+      }
+
+      .subtle {
+        color: var(--cp-text-muted);
+        margin: 0;
+      }
+
+      .timestamp {
+        min-width: 220px;
+        padding: 12px 16px;
+        border: 1px solid var(--cp-border);
+        border-radius: 16px;
+        background: var(--cp-surface);
+        box-shadow: var(--cp-shadow);
+        text-align: right;
+      }
+
+      .section-grid {
+        display: grid;
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .card {
+        background: var(--cp-surface);
+        border: 1px solid var(--cp-border);
+        border-radius: 16px;
+        padding: 20px;
+        box-shadow: var(--cp-shadow);
+      }
+
+      .overview {
+        grid-column: span 12;
+      }
+
+      .overview-metrics {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 16px;
+      }
+
+      .metric {
+        padding: 16px;
+        border: 1px solid var(--cp-border);
+        border-radius: 0.625rem;
+        background: var(--cp-surface-soft);
+      }
+
+      .metric-label {
+        color: var(--cp-text-muted);
+        font-size: 0.875rem;
+        margin-bottom: 8px;
+      }
+
+      .metric-value {
+        font-size: 1.875rem;
+        font-weight: 700;
+      }
+
+      .segments {
+        grid-column: span 8;
+      }
+
+      .alerts {
+        grid-column: span 4;
+      }
+
+      .olts,
+      .incidents {
+        grid-column: span 6;
+      }
+
+      h2 {
+        margin: 0 0 16px;
+        font-size: 1.25rem;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        padding: 12px;
+        border-bottom: 1px solid var(--cp-border);
+        text-align: left;
+        vertical-align: middle;
+      }
+
+      th {
+        color: var(--cp-text-muted);
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      tbody tr:hover {
+        background: var(--cp-surface-soft);
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid currentColor;
+        font-size: 0.875rem;
+        font-weight: 600;
+        background: var(--cp-surface-soft);
+      }
+
+      .status-pill::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: currentColor;
+      }
+
+      .operational {
+        color: var(--cp-success);
+      }
+
+      .degraded {
+        color: var(--cp-warning);
+      }
+
+      .outage {
+        color: var(--cp-danger);
+      }
+
+      .alert-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .alert-item {
+        padding: 16px;
+        border: 1px solid var(--cp-border);
+        border-left: 4px solid var(--cp-accent);
+        border-radius: 0.625rem;
+        background: var(--cp-surface-soft);
+      }
+
+      .alert-item.warning {
+        border-left-color: var(--cp-warning);
+      }
+
+      .alert-item.critical {
+        border-left-color: var(--cp-danger);
+      }
+
+      .alert-item h3,
+      .incident-title {
+        margin: 0 0 6px;
+        font-size: 1rem;
+      }
+
+      .meta,
+      .incident-meta {
+        color: var(--cp-text-muted);
+        font-size: 0.875rem;
+      }
+
+      .incident-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .incident-item {
+        padding: 16px;
+        border: 1px solid var(--cp-border);
+        border-radius: 0.625rem;
+        background: var(--cp-surface-soft);
+      }
+
+      .mono {
+        font-family: Consolas, "Courier New", Courier, monospace;
+      }
+
+      @media (max-width: 1100px) {
+        .segments,
+        .alerts,
+        .olts,
+        .incidents {
+          grid-column: span 12;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .page {
+          padding: 16px;
+        }
+
+        .dashboard-header {
+          flex-direction: column;
+        }
+
+        .timestamp {
+          width: 100%;
+          text-align: left;
+        }
+
+        .overview-metrics {
+          grid-template-columns: 1fr;
+        }
+
+        .table-wrap {
+          overflow-x: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="dashboard-header">
+        <div>
+          <p class="subtle">Regional FTTH Monitoring</p>
+          <h1>FiberNet Operations Dashboard</h1>
+          <p class="subtle">Live operational snapshot for metro and suburban access rings.</p>
+        </div>
+        <aside class="timestamp" aria-label="Current dashboard time">
+          <div class="meta">Current date/time</div>
+          <div id="current-datetime" class="mono">Loading...</div>
+        </aside>
+      </header>
+
+      <section class="section-grid" aria-label="Network operations overview">
+        <section class="card overview" aria-labelledby="network-overview-title">
+          <h2 id="network-overview-title">Network Overview</h2>
+          <div class="overview-metrics">
+            <article class="metric">
+              <div class="metric-label">Total Customers Served</div>
+              <div class="metric-value">148,320</div>
+            </article>
+            <article class="metric">
+              <div class="metric-label">Active Connections</div>
+              <div class="metric-value">145,907</div>
+            </article>
+            <article class="metric">
+              <div class="metric-label">30-Day Uptime</div>
+              <div class="metric-value">99.94%</div>
+            </article>
+          </div>
+        </section>
+
+        <section class="card segments" aria-labelledby="segment-status-title">
+          <h2 id="segment-status-title">Segment Status</h2>
+          <div class="table-wrap">
+            <table id="segment-status-table">
+              <thead>
+                <tr>
+                  <th>Segment Name</th>
+                  <th>Region</th>
+                  <th>Status</th>
+                  <th>Active Users</th>
+                  <th>Signal Level (dBm)</th>
+                  <th>Last Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr data-segment-name="NE-1 Backbone">
+                  <td>NE-1 Backbone</td>
+                  <td>Northeast Metro</td>
+                  <td data-status="operational"><span class="status-pill operational">Operational</span></td>
+                  <td>18,442</td>
+                  <td>-18.7</td>
+                  <td>2026-05-22 08:14</td>
+                </tr>
+                <tr data-segment-name="NE-3 Access Ring">
+                  <td>NE-3 Access Ring</td>
+                  <td>Northeast Metro</td>
+                  <td data-status="outage"><span class="status-pill outage">Outage</span></td>
+                  <td>0</td>
+                  <td>Loss of signal</td>
+                  <td>2026-05-22 08:19</td>
+                </tr>
+                <tr data-segment-name="SW-1 Distribution">
+                  <td>SW-1 Distribution</td>
+                  <td>Southwest Suburbs</td>
+                  <td data-status="degraded"><span class="status-pill degraded">Degraded</span></td>
+                  <td>14,208</td>
+                  <td>-26.3</td>
+                  <td>2026-05-22 08:16</td>
+                </tr>
+                <tr data-segment-name="SW-4 GPON Cluster">
+                  <td>SW-4 GPON Cluster</td>
+                  <td>Southwest Suburbs</td>
+                  <td data-status="operational"><span class="status-pill operational">Operational</span></td>
+                  <td>21,980</td>
+                  <td>-19.4</td>
+                  <td>2026-05-22 08:13</td>
+                </tr>
+                <tr data-segment-name="NW-2 Aggregation">
+                  <td>NW-2 Aggregation</td>
+                  <td>Northwest Regional</td>
+                  <td data-status="operational"><span class="status-pill operational">Operational</span></td>
+                  <td>24,611</td>
+                  <td>-17.9</td>
+                  <td>2026-05-22 08:15</td>
+                </tr>
+                <tr data-segment-name="SE-5 Residential Loop">
+                  <td>SE-5 Residential Loop</td>
+                  <td>Southeast Corridor</td>
+                  <td data-status="degraded"><span class="status-pill degraded">Degraded</span></td>
+                  <td>12,774</td>
+                  <td>-27.1</td>
+                  <td>2026-05-22 08:12</td>
+                </tr>
+                <tr data-segment-name="Central-2 Business Ring">
+                  <td>Central-2 Business Ring</td>
+                  <td>Downtown Core</td>
+                  <td data-status="operational"><span class="status-pill operational">Operational</span></td>
+                  <td>31,995</td>
+                  <td>-16.8</td>
+                  <td>2026-05-22 08:18</td>
+                </tr>
+                <tr data-segment-name="Harbor-1 Uplink">
+                  <td>Harbor-1 Uplink</td>
+                  <td>Harbor District</td>
+                  <td data-status="operational"><span class="status-pill operational">Operational</span></td>
+                  <td>21,897</td>
+                  <td>-18.2</td>
+                  <td>2026-05-22 08:17</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card alerts" id="active-alerts" aria-labelledby="active-alerts-title">
+          <h2 id="active-alerts-title">Active Alerts</h2>
+          <div class="alert-list">
+            <article class="alert-item critical">
+              <h3>Fiber cut detected on Segment NE-3</h3>
+              <p class="subtle">Splice team dispatched to Mason Ave handoff cabinet. Estimated restoration window: 2 hours.</p>
+              <div class="meta">Severity: Critical · Raised 08:19 · Impacted ONTs: 2,438</div>
+            </article>
+            <article class="alert-item warning">
+              <h3>High latency on Segment SW-1</h3>
+              <p class="subtle">Round-trip latency peaked at 48 ms after upstream congestion on the distribution switch stack.</p>
+              <div class="meta">Severity: Major · Raised 08:07 · Monitoring in progress</div>
+            </article>
+            <article class="alert-item warning">
+              <h3>Optical power drift on Segment SE-5</h3>
+              <p class="subtle">Field telemetry shows sustained receive power below engineering threshold for 14 splitters.</p>
+              <div class="meta">Severity: Major · Raised 07:54 · Technician assigned</div>
+            </article>
+          </div>
+        </section>
+
+        <section class="card olts" aria-labelledby="olt-health-title">
+          <h2 id="olt-health-title">OLT Health</h2>
+          <div class="table-wrap">
+            <table id="olt-health-table">
+              <thead>
+                <tr>
+                  <th>OLT ID</th>
+                  <th>Location</th>
+                  <th>Status</th>
+                  <th>CPU %</th>
+                  <th>Memory %</th>
+                  <th>Uplink Status</th>
+                  <th>Connected ONTs</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="mono">OLT-NE-201</td>
+                  <td>Mason Ave CO</td>
+                  <td data-status="degraded"><span class="status-pill degraded">Degraded</span></td>
+                  <td>71</td>
+                  <td>68</td>
+                  <td>1/2 links active</td>
+                  <td>6,102</td>
+                </tr>
+                <tr>
+                  <td class="mono">OLT-SW-114</td>
+                  <td>Redwood Hub</td>
+                  <td data-status="operational"><span class="status-pill operational">Operational</span></td>
+                  <td>49</td>
+                  <td>57</td>
+                  <td>Healthy</td>
+                  <td>5,884</td>
+                </tr>
+                <tr>
+                  <td class="mono">OLT-NW-332</td>
+                  <td>Pine Ridge POP</td>
+                  <td data-status="operational"><span class="status-pill operational">Operational</span></td>
+                  <td>43</td>
+                  <td>52</td>
+                  <td>Healthy</td>
+                  <td>7,011</td>
+                </tr>
+                <tr>
+                  <td class="mono">OLT-SE-089</td>
+                  <td>South Creek CO</td>
+                  <td data-status="degraded"><span class="status-pill degraded">Degraded</span></td>
+                  <td>66</td>
+                  <td>73</td>
+                  <td>Packet errors detected</td>
+                  <td>4,918</td>
+                </tr>
+                <tr>
+                  <td class="mono">OLT-CTR-410</td>
+                  <td>Central Market POP</td>
+                  <td data-status="operational"><span class="status-pill operational">Operational</span></td>
+                  <td>38</td>
+                  <td>46</td>
+                  <td>Healthy</td>
+                  <td>8,406</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card incidents" aria-labelledby="recent-incidents-title">
+          <h2 id="recent-incidents-title">Recent Incidents</h2>
+          <div class="incident-list">
+            <article class="incident-item">
+              <div class="incident-title">2026-05-22 07:31 · Generator transfer alarm at Harbor POP</div>
+              <div class="incident-meta">Status: <span class="operational">Resolved</span></div>
+              <p class="subtle">Commercial power was restored after a 12-minute outage; no customer impact reported.</p>
+            </article>
+            <article class="incident-item">
+              <div class="incident-title">2026-05-22 06:48 · Elevated packet loss on SW-1 backhaul</div>
+              <div class="incident-meta">Status: <span class="degraded">Investigating</span></div>
+              <p class="subtle">Traffic shaping applied while engineers verify optics and congestion on the upstream edge router.</p>
+            </article>
+            <article class="incident-item">
+              <div class="incident-title">2026-05-22 05:55 · OLT-NE-201 uplink flap</div>
+              <div class="incident-meta">Status: <span class="degraded">Monitoring</span></div>
+              <p class="subtle">Redundant uplink failed over successfully; replacement SFP scheduled during maintenance window.</p>
+            </article>
+            <article class="incident-item">
+              <div class="incident-title">2026-05-21 23:14 · Planned maintenance on Central-2 ring</div>
+              <div class="incident-meta">Status: <span class="operational">Resolved</span></div>
+              <p class="subtle">Firmware upgrade completed on aggregation shelf with no sustained impact to business customers.</p>
+            </article>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script>
+      const dateTimeElement = document.getElementById("current-datetime");
+
+      function updateCurrentDateTime() {
+        const now = new Date();
+        dateTimeElement.textContent = now.toLocaleString(undefined, {
+          weekday: "short",
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit"
+        });
+      }
+
+      updateCurrentDateTime();
+      setInterval(updateCurrentDateTime, 1000);
+    </script>
+  </body>
+</html>

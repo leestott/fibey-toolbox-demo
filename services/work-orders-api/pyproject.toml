@@ -1,0 +1,16 @@
+[project]
+name = "work-orders-api"
+version = "0.1.0"
+description = "FastAPI work orders API"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = false

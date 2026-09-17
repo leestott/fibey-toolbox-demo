@@ -1,0 +1,63 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "${AZURE_ENV_NAME}"
+    },
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "uiImageName": {
+      "value": "${SERVICE_UI_IMAGE_NAME}"
+    },
+    "gatewayImageName": {
+      "value": "${SERVICE_GATEWAY_IMAGE_NAME}"
+    },
+    "inventoryMcpImageName": {
+      "value": "${SERVICE_INVENTORY_MCP_IMAGE_NAME}"
+    },
+    "workOrdersApiImageName": {
+      "value": "${SERVICE_WORK_ORDERS_API_IMAGE_NAME}"
+    },
+    "statusDashboardImageName": {
+      "value": "${SERVICE_STATUS_DASHBOARD_IMAGE_NAME}"
+    },
+    "foundryProjectEndpoint": {
+      "value": "${FOUNDRY_PROJECT_ENDPOINT}"
+    },
+    "foundryModel": {
+      "value": "${FOUNDRY_MODEL}"
+    },
+    "toolboxMcpUrl": {
+      "value": "${TOOLBOX_MCP_URL}"
+    },
+    "resourceGroupName": {
+      "value": "${AZURE_FOUNDRY_RESOURCE_GROUP}"
+    },
+    "registryResourceId": {
+      "value": "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}"
+    },
+    "foundryAccountName": {
+      "value": "${AZURE_AI_ACCOUNT_NAME}"
+    },
+    "foundryProjectName": {
+      "value": "${AZURE_AI_PROJECT_NAME}"
+    },
+    "uiClientId": {
+      "value": "${UI_CLIENT_ID}"
+    },
+    "allowedUserId": {
+      "value": "${AZURE_PRINCIPAL_ID}"
+    },
+    "uiClientSecret": {
+      "value": "${UI_CLIENT_SECRET}"
+    },
+    "inventoryApiKey": {
+      "value": "${INVENTORY_API_KEY}"
+    },
+    "workOrdersApiKey": {
+      "value": "${WORK_ORDERS_API_KEY}"
+    }
+  }
+}

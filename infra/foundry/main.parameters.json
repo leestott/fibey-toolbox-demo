@@ -1,0 +1,85 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "agentSubnetName": {
+      "value": "agent-subnet"
+    },
+    "agentSubnetPrefix": {
+      "value": ""
+    },
+    "connectionCredentials": {
+      "value": {}
+    },
+    "connections": {
+      "value": []
+    },
+    "createAgentSubnet": {
+      "value": false
+    },
+    "createPESubnet": {
+      "value": false
+    },
+    "deployments": {
+      "value": [
+        {
+          "name": "gpt-5.4-mini",
+          "model": {
+            "name": "gpt-5.4-mini",
+            "format": "OpenAI",
+            "version": "2026-03-17"
+          },
+          "sku": {
+            "name": "GlobalStandard",
+            "capacity": 100
+          }
+        }
+      ]
+    },
+    "dnsZonesResourceGroup": {
+      "value": ""
+    },
+    "dnsZonesSubscription": {
+      "value": ""
+    },
+    "enableNetworkIsolation": {
+      "value": false
+    },
+    "foundryProjectName": {
+      "value": "${AZURE_AI_PROJECT_NAME=${AZURE_ENV_NAME}}"
+    },
+    "includeAcr": {
+      "value": true
+    },
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "managedIsolationMode": {
+      "value": ""
+    },
+    "peSubnetName": {
+      "value": "pe-subnet"
+    },
+    "peSubnetPrefix": {
+      "value": ""
+    },
+    "principalId": {
+      "value": "${AZURE_PRINCIPAL_ID}"
+    },
+    "principalType": {
+      "value": "${AZURE_PRINCIPAL_TYPE}"
+    },
+    "resourceGroupName": {
+      "value": "${AZURE_FOUNDRY_RESOURCE_GROUP=rg-${AZURE_ENV_NAME}-foundry}"
+    },
+    "resourceTokenSalt": {
+      "value": "${AZD_RESOURCE_TOKEN_SALT}"
+    },
+    "useManagedEgress": {
+      "value": false
+    },
+    "vnetId": {
+      "value": ""
+    }
+  }
+}

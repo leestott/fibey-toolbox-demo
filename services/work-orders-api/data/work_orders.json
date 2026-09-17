@@ -1,0 +1,192 @@
+[
+  {
+    "id": "WO-001",
+    "title": "Fiber splice restoration - Redmond business park",
+    "description": "Restore 24-count feeder splice after cabinet damage and verify light levels for affected tenants.",
+    "status": "open",
+    "priority": "critical",
+    "assigned_technician": "Alex Rivera",
+    "location": "1200 NE 45th St, Redmond, WA",
+    "parts_needed": [
+      {"part_id": "FIB-003", "quantity": 2},
+      {"part_id": "FIB-012", "quantity": 1}
+    ],
+    "created_at": "2026-05-18T08:15:00Z",
+    "updated_at": "2026-05-18T08:15:00Z",
+    "due_date": "2026-05-20T17:00:00Z"
+  },
+  {
+    "id": "WO-002",
+    "title": "OTDR acceptance testing - Bellevue campus expansion",
+    "description": "Run OTDR traces on newly terminated backbone pairs and attach pass/fail readings for turnover.",
+    "status": "in_progress",
+    "priority": "high",
+    "assigned_technician": "Jordan Kim",
+    "location": "350 106th Ave NE, Bellevue, WA",
+    "parts_needed": [
+      {"part_id": "FIB-008", "quantity": 1},
+      {"part_id": "FIB-021", "quantity": 2}
+    ],
+    "created_at": "2026-05-19T09:30:00Z",
+    "updated_at": "2026-05-21T13:10:00Z",
+    "due_date": "2026-05-24T18:00:00Z"
+  },
+  {
+    "id": "WO-003",
+    "title": "New fiber installation - South Lake Union office",
+    "description": "Install and label new single-mode drop from MPOE to suite 410 for incoming tenant activation.",
+    "status": "open",
+    "priority": "medium",
+    "assigned_technician": "Sam Patel",
+    "location": "500 Terry Ave N, Seattle, WA",
+    "parts_needed": [
+      {"part_id": "FIB-001", "quantity": 1},
+      {"part_id": "FIB-014", "quantity": 4}
+    ],
+    "created_at": "2026-05-20T07:50:00Z",
+    "updated_at": "2026-05-20T07:50:00Z",
+    "due_date": "2026-05-30T23:00:00Z"
+  },
+  {
+    "id": "WO-004",
+    "title": "Drop repair - Overlake medical clinic",
+    "description": "Repair damaged aerial drop, replace failed connector, and confirm service restoration to imaging wing.",
+    "status": "open",
+    "priority": "high",
+    "assigned_technician": "Casey Brooks",
+    "location": "1525 116th Ave NE, Bellevue, WA",
+    "parts_needed": [
+      {"part_id": "FIB-006", "quantity": 2},
+      {"part_id": "FIB-019", "quantity": 1}
+    ],
+    "created_at": "2026-05-15T10:05:00Z",
+    "updated_at": "2026-05-17T16:20:00Z",
+    "due_date": "2026-05-19T19:00:00Z"
+  },
+  {
+    "id": "WO-005",
+    "title": "Preventive maintenance - Snoqualmie Ridge hut",
+    "description": "Clean panels, inspect jumpers, and verify enclosure environmental alarms during scheduled maintenance window.",
+    "status": "completed",
+    "priority": "low",
+    "assigned_technician": "Morgan Chen",
+    "location": "37600 SE Fury St, Snoqualmie, WA",
+    "parts_needed": [
+      {"part_id": "FIB-024", "quantity": 1}
+    ],
+    "created_at": "2026-05-08T06:40:00Z",
+    "updated_at": "2026-05-11T14:45:00Z",
+    "due_date": "2026-05-12T17:00:00Z"
+  },
+  {
+    "id": "WO-006",
+    "title": "Equipment upgrade - Redmond OLT shelf",
+    "description": "Swap line card, patch new uplinks, and validate GPON service groups after firmware-approved hardware upgrade.",
+    "status": "in_progress",
+    "priority": "high",
+    "assigned_technician": "Morgan Chen",
+    "location": "1 Microsoft Way, Redmond, WA",
+    "parts_needed": [
+      {"part_id": "FIB-009", "quantity": 1},
+      {"part_id": "FIB-027", "quantity": 2}
+    ],
+    "created_at": "2026-05-21T05:55:00Z",
+    "updated_at": "2026-05-22T09:15:00Z",
+    "due_date": "2026-05-28T22:00:00Z"
+  },
+  {
+    "id": "WO-007",
+    "title": "Fiber splicing - SeaTac terminal IDF",
+    "description": "Complete rack-to-rack splice tray buildout for concourse expansion and document final splice map.",
+    "status": "in_progress",
+    "priority": "critical",
+    "assigned_technician": "Alex Rivera",
+    "location": "17801 International Blvd, Seattle, WA",
+    "parts_needed": [
+      {"part_id": "FIB-004", "quantity": 3},
+      {"part_id": "FIB-018", "quantity": 1}
+    ],
+    "created_at": "2026-05-20T12:20:00Z",
+    "updated_at": "2026-05-22T11:40:00Z",
+    "due_date": "2026-05-23T20:00:00Z"
+  },
+  {
+    "id": "WO-008",
+    "title": "Storm follow-up OTDR testing - Issaquah POP",
+    "description": "Validate repaired feeder routes after wind event and compare traces against pre-storm baseline records.",
+    "status": "cancelled",
+    "priority": "medium",
+    "assigned_technician": "Jordan Kim",
+    "location": "180 E Sunset Way, Issaquah, WA",
+    "parts_needed": [
+      {"part_id": "FIB-022", "quantity": 1}
+    ],
+    "created_at": "2026-05-14T09:00:00Z",
+    "updated_at": "2026-05-16T15:10:00Z",
+    "due_date": "2026-05-17T17:30:00Z"
+  },
+  {
+    "id": "WO-009",
+    "title": "New installation - Everett hospital annex",
+    "description": "Install redundant single-mode pair to new imaging annex and coordinate turnover with onsite IT.",
+    "status": "open",
+    "priority": "high",
+    "assigned_technician": "Sam Patel",
+    "location": "1321 Colby Ave, Everett, WA",
+    "parts_needed": [
+      {"part_id": "FIB-005", "quantity": 2},
+      {"part_id": "FIB-016", "quantity": 2}
+    ],
+    "created_at": "2026-05-22T08:35:00Z",
+    "updated_at": "2026-05-22T08:35:00Z",
+    "due_date": "2026-06-02T21:00:00Z"
+  },
+  {
+    "id": "WO-010",
+    "title": "Backhaul repair - Duvall cell site",
+    "description": "Replace damaged patch leads, re-terminate panel ports, and confirm carrier handoff levels are back within spec.",
+    "status": "completed",
+    "priority": "critical",
+    "assigned_technician": "Morgan Chen",
+    "location": "15600 Main St NE, Duvall, WA",
+    "parts_needed": [
+      {"part_id": "FIB-011", "quantity": 2},
+      {"part_id": "FIB-020", "quantity": 1}
+    ],
+    "created_at": "2026-05-10T04:45:00Z",
+    "updated_at": "2026-05-13T18:25:00Z",
+    "due_date": "2026-05-14T16:00:00Z"
+  },
+  {
+    "id": "WO-011",
+    "title": "Panel maintenance - Kirkland data hall",
+    "description": "Inspect LC panels, replace worn labels, and clean jumpers during low-impact maintenance block.",
+    "status": "open",
+    "priority": "low",
+    "assigned_technician": "Casey Brooks",
+    "location": "12710 NE 124th St, Kirkland, WA",
+    "parts_needed": [
+      {"part_id": "FIB-013", "quantity": 1},
+      {"part_id": "FIB-026", "quantity": 2}
+    ],
+    "created_at": "2026-05-16T11:10:00Z",
+    "updated_at": "2026-05-18T09:05:00Z",
+    "due_date": "2026-05-21T17:00:00Z"
+  },
+  {
+    "id": "WO-012",
+    "title": "Equipment upgrade - Tacoma school district hub",
+    "description": "Upgrade aggregation switch optics, validate VLAN transport, and hand off post-change OTDR snapshots.",
+    "status": "in_progress",
+    "priority": "medium",
+    "assigned_technician": "Jordan Kim",
+    "location": "601 S 8th St, Tacoma, WA",
+    "parts_needed": [
+      {"part_id": "FIB-007", "quantity": 2},
+      {"part_id": "FIB-030", "quantity": 1}
+    ],
+    "created_at": "2026-05-21T14:25:00Z",
+    "updated_at": "2026-05-22T10:30:00Z",
+    "due_date": "2026-05-26T23:00:00Z"
+  }
+]
