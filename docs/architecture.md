@@ -1,177 +1,220 @@
-# Architecture
+# Fibey hosted solution: engineering architecture
 
-## Overview
+Fibey turns a technician's question into a tool-grounded response over synthetic fiber-operations data. Microsoft Foundry runs the agent code; Azure Container Apps (ACA) runs the five supporting services. Model Context Protocol (MCP) standardizes how the agent discovers and invokes the toolbox's capabilities.
 
-Fibey Field Ops is a fiber optics field operations demo built on **Azure AI Foundry Hosted Agents** and the **Foundry Toolbox**. The agent supports field technicians by combining four toolbox-backed operational systems: inventory lookup, work order management, knowledge retrieval, and service-status verification.
+This document describes the resources and contracts declared in this repository, not a claim that a particular environment is live. Use [the deployment guide](../deployment_guide.md) to provision and verify an environment. `azure.yaml` is the deployment source of truth; there is no separate `agent.yaml`.
 
-## System Diagram
+For presentations, use the [application architecture image](images/fibey-hosted-architecture.png) or slide 9 of the [PowerPoint deck](slides/fibey-hosted-agents-mcp.pptx). The deck places this visual immediately before the live-app demo on slide 10. The engineering diagram below expands the resource and identity detail.
 
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│ Browser                                                                    │
-│  Fibey Field Ops UI                                                        │
-│  ┌──────────────────────────────┬───────────────────────────────────────┐  │
-│  │ Chat for field technicians   │ Activity sidebar                      │  │
-│  │ "Need a splice tray and WO" │ ⚡ inventory-mcp running              │  │
-│  │ "Check outage before cutover"│ ✅ work-orders-api complete          │  │
-│  └──────────────────────────────┴───────────────────────────────────────┘  │
-└───────────────────────────────┬────────────────────────────────────────────┘
-                                │ POST /api/chat (streaming SSE)
-                                ▼
-                   ┌──────────────────────────────┐
-                   │ Gateway (FastAPI)            │  src/fibey/gateway/
-                   │ Azure Container Apps         │
-                   └───────────────┬──────────────┘
-                                   │ local or hosted agent execution
-                                   ▼
-                   ┌──────────────────────────────┐
-                   │ Fibey Field Ops Agent        │  src/fibey/agent/
-                   │ Azure AI Foundry Agent Svc   │
-                   └───────────────┬──────────────┘
-                                   │ Foundry Toolbox
-                                   ▼
-        ┌─────────────────────────────────────────────────────────────────┐
-        │ Toolbox services                                                │
-        │  • inventory-mcp         → parts inventory and stock checks     │
-        │  • work-orders-api       → create/view/update work orders       │
-        │  • FoundryIQ knowledge   → AI Search + KB MCP retrieval         │
-        │  • browser automation    → status dashboard verification        │
-        └───────────────┬───────────────────────┬─────────────────────────┘
-                        │                       │
-          ┌─────────────▼────────────┐  ┌──────▼─────────────────────┐
-          │ services/inventory-mcp   │  │ services/work-orders-api   │
-          │ Container App / :8001    │  │ Container App / :8002      │
-          └──────────────────────────┘  └────────────────────────────┘
+## Complete hosted resource diagram
 
-          ┌──────────────────────────┐  ┌────────────────────────────┐
-          │ services/status-dashboard│  │ services/foundry-iq-docs   │
-          │ Static app / :8003       │  │ Blob → Search → KB source  │
-          └──────────────────────────┘  └────────────────────────────┘
-```
+The diagram separates application traffic from provisioning, image delivery, ingestion, and telemetry. The two deployment-layer boxes are logical groupings, not private-network boundaries or a guarantee of separate resource groups; actual resource-group names come from the selected azd environment.
 
-## Components
+Solid arrows show application and knowledge flows. Dotted arrows show deployment, identity configuration, image delivery, and telemetry. The Application Insights box is explicitly conditional: the hosted platform can supply a linked telemetry destination, but no Application Insights resource is declared by this repository's Bicep.
 
-### Gateway (`src/fibey/gateway/`)
+```mermaid
+flowchart TB
+    User["Field technician browser<br/>Synthetic operations only"]
+    Entra["Microsoft Entra ID<br/>Single-tenant UI app registration<br/>Allowed user object ID"]
+    Repo["Git repository<br/>azure.yaml, Bicep, Dockerfiles<br/>Locked dependencies, skills and docs"]
+    Operator["Deployment operator<br/>Azure CLI, azd and PowerShell"]
+    ARM["Azure Resource Manager<br/>Resources, configuration and scoped RBAC"]
 
-FastAPI API layer between the React UI and the field operations agent.
+    subgraph Azure["Target Azure subscription"]
+        subgraph FoundryLayer["Foundry deployment layer"]
+            ACR["Azure Container Registry<br/>Hosted and supporting images"]
+            subgraph Account["Microsoft Foundry account - AIServices<br/>System identity, key auth disabled"]
+                Model["Model deployment<br/>GPT-5.4-mini, GlobalStandard<br/>Configured capacity 100"]
+                subgraph Project["Foundry project - system-assigned identity"]
+                    Endpoint["Hosted agent endpoint<br/>Responses API v1"]
+                    Agent["fibey-agent<br/>Foundry-managed hosted compute<br/>Responses protocol 2.0.0, 1 CPU, 2 GiB<br/>Agent identity, five bundled skills"]
+                    History["Foundry-managed response history<br/>Compute-session context"]
+                    Toolbox["Foundry Toolbox<br/>fibey-toolbox, published version<br/>MCP consumer endpoint"]
+                    Connections["Project connections<br/>Inventory and orders: x-api-key<br/>Knowledge: project managed identity"]
+                    RegistryConnection["Project registry connection<br/>Project identity image pull"]
+                end
+            end
+        end
 
-- **Deployment target**: Azure Container App
-- **Endpoints**:
-  - `POST /api/chat` — streaming SSE chat endpoint
-  - `POST /api/sessions/reset` — clear session state
-  - `GET /api/health` — health check
-- **Responsibilities**: session management, SSE formatting, routing to local or hosted agent execution
+        subgraph Supporting["Supporting infrastructure layer"]
+            subgraph ACA["Azure Container Apps environment"]
+                UI["UI - external ingress, port 80<br/>React static build and Nginx<br/>ACA Entra auth and user allowlist"]
+                Gateway["Gateway - internal ingress, port 8000<br/>FastAPI, hosted mode, one replica<br/>In-memory conversation mappings"]
+                Inventory["Inventory MCP - external ingress, port 8001<br/>x-api-key, stateless Streamable HTTP<br/>Synthetic inventory, one replica"]
+                Orders["Work-orders API - external ingress, port 8002<br/>x-api-key, OpenAPI<br/>In-memory synthetic orders, one replica"]
+                Dashboard["Status dashboard - internal ingress, port 8003<br/>Nginx and synthetic HTML status"]
+                AppIdentity["Five system-assigned ACA identities<br/>ACR registry association per app"]
+                Secrets["ACA secrets<br/>UI client secret and separate API keys"]
+            end
+            subgraph Storage["Azure Storage - StorageV2, Standard_LRS<br/>Shared keys and anonymous blobs disabled"]
+                Blob["Private blob container<br/>foundry-iq-docs<br/>Eight source Markdown documents"]
+            end
+            subgraph Search["Azure AI Search - Basic, system identity<br/>Key auth disabled, semantic ranker<br/>Public network access, 1 replica / 1 partition"]
+                DataSource["Blob data source<br/>foundry-iq-docs-ds"]
+                Indexer["Indexer<br/>foundry-iq-docs-indexer"]
+                Index["Search index<br/>foundry-iq-docs-index"]
+                KnowledgeSource["Knowledge source<br/>fibey-field-ops-ks"]
+                KB["Foundry IQ knowledge base<br/>fibey-field-ops-kb and MCP endpoint<br/>Minimal reasoning, extractive output"]
+            end
+            Logs["Azure Monitor Log Analytics<br/>ACA system and console logs<br/>30-day workspace retention"]
+        end
+        Insights["Azure Monitor Application Insights<br/>Hosted project-linked sink, if configured<br/>Not provisioned by this repository"]
+    end
 
-### Agent (`src/fibey/agent/`)
-
-The field operations agent that selects the right toolbox service for the technician's request.
-
-- **Deployment target**: Azure AI Foundry Agent Service
-- **Key files**:
-  - `agent.py` — agent definition + Toolbox MCP connection
-  - `hosted.py` — hosted-mode entrypoint
-  - `main.py` — local CLI entrypoint
-  - `prompts/system_prompt.md` — field operations system prompt
-
-### Frontend (`ui/`)
-
-React + TypeScript + Tailwind chat experience for field technicians.
-
-- **Deployment target**: Static build served with the gateway or from a static host
-- **Key components**:
-  - `ChatPanel` — conversation view
-  - `MessageBubble` — markdown rendering
-  - `ChatInput` — message entry
-  - `PromptSuggestions` — clickable starter prompts shown in empty state
-  - `ActivitySidebar` — live tool activity feed
-
-### Toolbox services (`services/`)
-
-The `services/` folder contains the operational systems the agent uses:
-
-```text
-services/
-├── foundry-iq-docs/      # Markdown docs uploaded to blob storage for FoundryIQ
-│   └── docs/
-├── inventory-mcp/        # MCP server for parts inventory lookup
-│   ├── data/
-│   └── server.py
-├── status-dashboard/     # Static HTML dashboard for network/service status
-│   └── public/
-└── work-orders-api/      # FastAPI service for work order operations
-    ├── data/
-    └── server.py
+    User -->|"Sign in"| Entra
+    User -->|"HTTPS chat and SSE"| UI
+    Entra -.->|"Authentication configuration"| UI
+    UI -->|"HTTPS, fixed Nginx upstream"| Gateway
+    Gateway -->|"Entra token for ai.azure.com"| Endpoint
+    Endpoint --> Agent
+    Endpoint --- History
+    Agent -->|"Model inference"| Model
+    Agent -->|"FoundryToolbox: authenticated MCP and call ID"| Toolbox
+    Toolbox --> Connections
+    Connections -->|"MCP and API key"| Inventory
+    Connections -->|"OpenAPI and API key"| Orders
+    Connections -->|"MCP and Search audience token"| KB
+    Inventory -->|"GET configured dashboard URL"| Dashboard
+    Blob --> DataSource --> Indexer --> Index --> KnowledgeSource --> KB
+    Repo -.-> Operator
+    Operator -.->|"azd provision: control plane"| ARM
+    ARM -.-> Account
+    ARM -.-> ACA
+    ARM -.-> Storage
+    ARM -.-> Search
+    ARM -.-> Logs
+    Operator -.->|"Build and publish images"| ACR
+    Operator -.->|"Upload and index documents"| Blob
+    Operator -.->|"Setup scripts: Search objects and toolbox"| Toolbox
+    Operator -.->|"Configure ingestion and retrieval"| Search
+    ACR -.-> RegistryConnection
+    RegistryConnection -.-> Agent
+    ACR -.->|"AcrPull and identity association"| AppIdentity
+    AppIdentity -.-> ACA
+    Secrets -.-> UI
+    Secrets -.-> Inventory
+    Secrets -.-> Orders
+    ACA -.-> Logs
+    Agent -.->|"OpenTelemetry; verify exporter and linked sink"| Insights
 ```
 
-#### `services/inventory-mcp/`
-- Streamable HTTP MCP server
-- Default local port: `8001`
-- Provides part search, detail lookup, and stock status checks
+### Resource ownership and lifecycle
 
-#### `services/work-orders-api/`
-- FastAPI service for work order CRUD-style operations
-- Default local port: `8002`
-- Provides work order list, detail, create, and patch endpoints
+| Resource or object | Created/configured by | Important boundary |
+|---|---|---|
+| Foundry account, project, model, registry integration | `azure.yaml`, `infra/foundry/`, azd Foundry layer | Model quota and role assignments must be checked in the chosen region/project |
+| Hosted agent image, immutable version, endpoint, runtime identity | `azd deploy fibey-agent` and Foundry | Managed runtime, not an ACA app in this environment |
+| ACA environment and five apps | `infra/main.bicep`, `infra/apps.bicep` | Initial placeholder ports differ from application ports |
+| UI Entra app registration and secret | Operator prerequisite; ACA auth config in Bicep | Application/client ID and allowed user object ID are different values |
+| System identities, scoped role assignments, ACA secrets | Bicep using environment inputs | Registry association and `AcrPull` are both required |
+| Storage account and private document container | Supporting Bicep | Private container access is not a private network endpoint |
+| Search service and identity | Supporting Bicep | Indexes and knowledge objects do not exist merely because Search is provisioned |
+| Documents, data source, indexer, index, knowledge source/base | `scripts/setup-knowledge-base.ps1` | Identity-based ingestion; no embedding deployment in this pipeline |
+| Foundry knowledge connection and toolbox connections/version | Both setup scripts, in order | Credentials remain in connections; toolbox definition contains references |
+| ACA Log Analytics workspace | Supporting Bicep | Captures supporting-service logs, not proof of hosted trace ingestion |
+| Hosted Application Insights/exporter destination | Foundry project/platform configuration, verified by operator | Not provisioned by this repository |
 
-#### `services/status-dashboard/`
-- Static dashboard used by browser automation for network/service checks
-- Default local port: `8003`
-- Packaged as a lightweight web container
+## Request orchestration and tool contracts
 
-#### `services/foundry-iq-docs/`
-- Source markdown files for FoundryIQ knowledge retrieval
-- Full retrieval pipeline: Documents → Blob Storage → AI Search Indexer → Index → Knowledge Source → Knowledge Base → MCP endpoint → Foundry connection
-- Knowledge sources and knowledge bases are created through the Azure AI Search REST API using `2026-04-01`
-- Uploaded to Azure Blob Storage separately from app deployment
+One hosted `Agent` routes requests using five skills: `inventory-lookup`, `work-order-management`, `knowledge-retrieval`, `work-order-preparation`, and `field-briefing`. The larger skills combine operations; they do not instantiate specialist agents.
 
-## Container Apps topology
+The toolbox configuration exposes eleven operational tools. The model chooses from the advertised names and schemas after loading the relevant instructions. A toolbox connection is a common access surface, not a replacement for downstream authentication or authorization.
 
-The deployment is organized around small, separable services:
+| Backend | Operations | Contract |
+|---|---|---|
+| Inventory MCP | `list_parts`, `search_parts`, `get_part_details`, `check_stock`, `check_stock_batch`, `get_network_status` | Stateless Streamable HTTP; exact exposed names may include a server prefix |
+| Work Orders OpenAPI | `list_work_orders`, `get_work_order`, `create_work_order`, `update_work_order` | Live OpenAPI 3 schema; connection credential under HTTP header name `x-api-key` |
+| Foundry IQ MCP | `knowledge_base_retrieve` | Use advertised schema, including the required `query_variants` structure |
 
-| Component | Runtime | Port | Topology |
-|-----------|---------|------|----------|
-| Gateway | FastAPI | `8080` | Azure Container App handling chat API + UI hosting |
-| Inventory MCP | Python MCP server | `8001` | Azure Container App exposed to the Toolbox |
-| Work Orders API | FastAPI | `8002` | Azure Container App exposed to the Toolbox |
-| Status Dashboard | Static web app | `8003` | Azure Container App or static internal endpoint for browser automation |
-| Agent | Azure AI Foundry hosted agent | n/a | Connects to Toolbox and orchestrates tools |
-| FoundryIQ docs | Blob storage + Azure AI Search | n/a | Blob-backed content ingested by AI Search, then exposed through a knowledge base MCP endpoint |
-
-## Streaming Protocol
-
-The gateway streams SSE events to the frontend:
-
-```text
-event: activity
-data: {"tool": "inventory-mcp", "status": "running", "detail": "Checking stock for splice tray..."}
-
-event: delta
-data: {"content": "Stock is low at the north depot."}
-
-event: citation
-data: {"source": "fiber-splicing-procedures.md", "url": "..."}
-
-event: done
-data: [DONE]
+```mermaid
+sequenceDiagram
+    actor Technician
+    participant UI as UI and Nginx
+    participant Gateway as Internal gateway
+    participant Agent as Foundry hosted agent
+    participant Toolbox as Foundry Toolbox
+    participant Tools as Operational services and Search
+    Technician->>UI: Brief me on WO-007
+    UI->>Gateway: POST /api/chat with UUID session_id
+    Gateway->>Agent: Responses request with Azure token
+    Agent->>Agent: Load field-briefing skill
+    Agent->>Toolbox: Discover/use advertised operations
+    Toolbox->>Tools: Work order, stock, status, procedures
+    Tools-->>Toolbox: Synthetic facts and source references
+    Toolbox-->>Agent: Tool results
+    Agent-->>Gateway: Responses text, activity and citations
+    Gateway-->>UI: SSE delta, activity, citation, done
+    UI-->>Technician: Grounded briefing and activity sidebar
 ```
 
-| Event | Purpose |
-|-------|---------|
+`FoundryToolbox` forwards hosted platform context, including the runtime call ID. `ResponsesHostServer.run_async()` owns the supported hosting lifecycle. The entrypoint closes clients and credentials on exit; history retrieval errors must fail the turn rather than silently dropping context.
+
+## Identity, network, and permission boundaries
+
+Role-based access control (RBAC) grants a principal permission at a resource scope. The **control plane** manages Azure resources and configuration; the **data plane** invokes models, agents, tools, and Search queries or reads/writes blobs. Successful provisioning is not evidence that all data-plane calls are authorized.
+
+Keep the identities separate when debugging. A signed-in browser user is not automatically the identity used for every downstream call: the gateway uses its managed identity, the hosted container uses the platform-provided agent identity, and the knowledge connection explicitly uses the Foundry project managed identity.
+
+| Hop | Identity or credential | Enforcement |
+|---|---|---|
+| Browser to UI | Entra user and UI application registration | ACA authentication plus explicit user allowlist |
+| UI to gateway | Internal ACA network path | Nginx fixed upstream; no separate per-user authorization in gateway |
+| Gateway to hosted endpoint | Gateway system-assigned identity | Project-scoped Azure AI User role |
+| Hosted agent to model/toolbox | Foundry-provided agent identity via SDK credential | Project/model/toolbox permissions and runtime call context |
+| Platform to hosted image | Project managed identity / configured registry connection | Registry pull permission; distinct from agent runtime identity |
+| Toolbox to inventory/orders | Separate API keys in project connections | Operational endpoints validate `x-api-key` |
+| Toolbox to knowledge base | Foundry project managed identity | Search Index Data Reader on Search |
+| Search indexer to blobs | Search system-assigned identity | Storage Blob Data Reader on document storage |
+| ACA apps to images | Each app's system-assigned identity | `AcrPull` on ACR plus explicit registry identity association |
+
+The UI, inventory, and work-orders ingress endpoints are external. Gateway and dashboard ingress are internal to the ACA environment. Foundry network isolation is optional and off by default; Search public network access is enabled. No default end-to-end private endpoint topology, firewall appliance, API Management gateway, or Key Vault is declared. Optional Foundry network modules do not automatically isolate Search, Storage, or all supporting services.
+
+## State, streaming, and observability
+
+The gateway translates the Foundry Responses stream into the UI's SSE contract. It validates UUID session IDs and messages of 1 to 16,000 characters, exposes `X-Session-Id`, rejects overlapping requests for a session, and accepts only configured exact CORS origins.
+
+Conversation continuity has two identifiers: `previous_response_id` links response history and `agent_session_id` preserves hosted compute affinity. Both mappings live in gateway memory. Foundry's managed history does not make these application mappings durable or enforce user ownership of a session.
+
+| Event | UI meaning |
+|---|---|
 | `delta` | Assistant text chunk |
-| `activity` | Tool invocation status |
-| `citation` | Source reference from knowledge tools |
-| `error` | Error message |
-| `done` | End of stream |
+| `activity` | Tool activity for the sidebar |
+| `citation` | Knowledge source reference |
+| `error` | Request, tool/runtime, or stream failure |
+| `done` | Stream terminator with `[DONE]`; an earlier error still means failure |
 
-## Agent modes
+Premature EOF, malformed streams, timeouts, and response-level failures must surface as errors. Reset clears the gateway's local history and hosted mappings; it does not delete the old remote compute session or reset work orders.
 
-Controlled by `AGENT_MODE`:
+ACA environment logs flow to Log Analytics. Hosted code enables OpenTelemetry, a standard format for traces and metrics, with sensitive message content disabled by default. Inspect the project's linked Application Insights/exporter configuration and confirm receipt of a synthetic trace before promising end-to-end visibility. The activity sidebar is a user-facing view, not a durable audit log.
 
-- **`local`** — the gateway runs the agent in-process for local development.
-- **`containerapp`** — the gateway proxies (over HTTP/SSE) to a self-hosted
-  agent service running as its own Container App
-  (`src/fibey/agent/service.py`). This is the recommended production mode.
-- **`hosted`** — the gateway proxies to a Foundry-hosted agent
-  (`src/fibey/agent/hosted.py`) managed by the Azure AI Foundry platform.
+## Deployment reproducibility and production evolution
 
-All three modes keep the same UI behavior and streaming contract.
+The deployment separates resource provisioning from image publication and application readiness. The first supporting-infrastructure pass creates placeholder apps on port 80; after all five image settings exist, a second pass applies the images with their actual ports and probes. Knowledge ingestion and toolbox registration precede hosted-agent deployment.
+
+The source, Bicep, dependency locks, and versioned artifacts support a DevOps workflow. GitOps adds reviewed desired state and controlled reconciliation; this repository provides the ingredients, not a running CI/CD pipeline or GitOps controller. See [release practices](../deployment_guide.md#devops-gitops-and-release-management) for a proposed promotion process.
+
+| Production concern | Implemented here | Required before real operations |
+|---|---|---|
+| Application scale | Managed hosted runtime; one replica for gateway, inventory, and orders | Externalize session/order state; load-test concurrency, quotas, and downstream limits |
+| Data persistence | Seeded synthetic orders in process memory | Durable transactional store, backup/restore, idempotent writes |
+| User isolation | UI login and allowlist; UUID conversation handles | Server-enforced session ownership and downstream authorization |
+| Operational approvals | No enforced approval UI; unattended tool calls | Runtime pause/resume and server-side approval bound to exact write arguments |
+| Network protection | Internal gateway/dashboard; protected external APIs | Workload-specific private networking, egress policy, and secret rotation |
+| Reliability | Bounded inputs, stream failure handling, explicit setup checks | SLOs, alerts, recovery drills, evaluation and release gates |
+| Multi-agent coordination | One agent orchestrates multiple tools | Separate specialist identities, typed handoffs, budgets, and durable coordination |
+
+For the proposed specialist-agent design, see [multi-agent coordination](session-overview.md#multi-agent-coordination-extension-not-deployed). It is intentionally separate from the deployed diagram.
+
+## Source references
+
+The repository implementation determines what this sample does. The platform references explain the managed capabilities and responsibilities that surround it; service support and API versions can change independently of a pinned sample.
+
+Consult both before adapting the design, especially for agent identity, approval enforcement, telemetry, and private networking.
+
+| Reference | Use |
+|---|---|
+| [`azure.yaml`](../azure.yaml), [`infra/apps.bicep`](../infra/apps.bicep), [`infra/modules/access.bicep`](../infra/modules/access.bicep) | Deployment services, topology, and scoped role assignments |
+| [`hosted.py`](../src/fibey/agent/hosted.py), [`api_server.py`](../src/fibey/gateway/api_server.py) | Hosted runtime and gateway behavior |
+| [What are hosted agents?](https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agents) | Managed compute, runtime identity, versions, and observability |
+| [Use a toolbox with a hosted agent](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/use-toolbox-hosted-agent) | SDK integration, endpoints, and application-enforced approvals |
+| [Toolbox overview](https://learn.microsoft.com/azure/foundry/agents/concepts/toolbox-overview) | Shared MCP tool surface and connection management |
