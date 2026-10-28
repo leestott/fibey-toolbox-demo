@@ -13,9 +13,11 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project --no-cache
 
 COPY src/ ./src/
+COPY .agent_configs/ ./.agent_configs/
 RUN uv sync --frozen --no-dev --no-cache \
     && useradd --create-home --uid 10001 fibey \
-    && chown fibey /app
+    && chown fibey /app \
+    && chown -R fibey /app/.agent_configs
 
 USER fibey
 

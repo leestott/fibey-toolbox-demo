@@ -14,6 +14,7 @@ dependencies = [
     "agent-framework-core==1.18.0",
     "agent-framework-foundry==1.13.0",
     "agent-framework-foundry-hosting==1.0.0b260910",
+    "azure-ai-agentserver-optimization==1.0.0b1",
     "mcp>=1.24.0,<2",
     "httpx",
 ]

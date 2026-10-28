@@ -189,7 +189,7 @@ ACA environment logs flow to Log Analytics. Hosted code enables OpenTelemetry, a
 
 ## Deployment reproducibility and production evolution
 
-The deployment separates resource provisioning from image publication and application readiness. The first supporting-infrastructure pass creates placeholder apps on port 80; after all five image settings exist, a second pass applies the images with their actual ports and probes. Knowledge ingestion and toolbox registration precede hosted-agent deployment.
+The deployment separates resource provisioning from image publication and application readiness. The first supporting-infrastructure pass creates public placeholder apps on port 80 without private registry associations, allowing their system identities and pull roles to be created. After all five image settings exist, a second pass applies the images with their actual ports, probes, and system-identity registry associations. Knowledge ingestion and toolbox registration precede hosted-agent deployment.
 
 The source, Bicep, dependency locks, and versioned artifacts support a DevOps workflow. GitOps adds reviewed desired state and controlled reconciliation; this repository provides the ingredients, not a running CI/CD pipeline or GitOps controller. See [release practices](../deployment_guide.md#devops-gitops-and-release-management) for a proposed promotion process.
 

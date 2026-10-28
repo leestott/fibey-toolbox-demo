@@ -177,7 +177,7 @@ The [deployment guide](../../deployment_guide.md) gives the complete sequence an
 
 1. Select the intended environment and provision the Foundry layer.
 2. Configure project aliases, the Entra application, the allowed user, and separate API keys.
-3. Provision placeholder supporting apps and verify scoped access and registry identity associations.
+3. Provision public placeholder supporting apps without private registry associations, then verify scoped pull access. The second infrastructure pass adds system-identity registry associations with the real images.
 4. Publish all five supporting images and confirm every image setting is populated.
 5. Provision supporting infrastructure again to apply the matching images, ports, and probes.
 6. Run knowledge setup, then toolbox setup.

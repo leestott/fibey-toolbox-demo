@@ -109,6 +109,41 @@ For direct service development, install from each service's existing lock and bi
 
 The dashboard is an HTML data source for the narrow status tool, not browser automation. Work-order data is loaded from its seed JSON and kept in memory; a service restart discards updates.
 
+## Prepare hosted-agent optimization
+
+The hosted entrypoint reads the reviewed model and instructions from
+`.agent_configs/baseline/`, through `azure-ai-agentserver-optimization`. The
+baseline starts with the existing GPT-5.4-mini deployment and an unchanged
+snapshot of `src/fibey/agent/prompts/system_prompt.md`. That original prompt
+remains the local, in-process agent's prompt; update both deliberately when
+changing the shared baseline. `AZURE_AI_MODEL_DEPLOYMENT_NAME` no longer
+overrides the hosted model: keep the baseline model aligned with the deployment
+declared in `azure.yaml`. The local agent still uses `FOUNDRY_MODEL`.
+
+The SDK can load candidate instructions, model and optional temperature from
+platform-provided optimization context. Fibey passes a scoped Azure credential
+to the resolver and refuses missing candidates or invalid configurations rather
+than silently evaluating the baseline. Tools and skills remain managed by
+`FoundryToolbox` and the existing published/bundled skill discovery; candidates
+containing replacement tools or skills fail explicitly. Sensitive telemetry
+remains disabled by default.
+
+The agent image includes the baseline in a writable `.agent_configs/` directory
+for resolver downloads. Generated candidate folders are ignored by Git and
+excluded from Docker builds. Review and promote a selected candidate's files
+into the tracked baseline before deploying it; copying a candidate folder alone
+does not select it at normal startup. No optimization runtime variables are
+added to `azure.yaml`.
+
+Reuse a reviewed evaluation configuration and registered dataset/evaluator,
+rather than regenerating sample tasks. Current CLI versions support
+`--eval-config` and `--eval`; they reject legacy agent `eval.yaml` files. Consult
+[`azd` and Agent Optimizer documentation](https://learn.microsoft.com/azure/foundry/agents/how-to/optimize-agent-targets)
+and the installed CLI's help for the current request schema. Obtain review of
+scaffold changes before running optimization, confirm a supported optimizer
+model and its quota, and review candidate changes before applying or deploying.
+Read-only evaluation prompts are not a server-enforced write restriction.
+
 ## Run the existing checks
 
 The repository includes standard-library Python regression tests covering runtime, gateway, and tool-service behavior. The frontend build includes TypeScript checking.

@@ -10,12 +10,21 @@ Run commands from the repository root in PowerShell 7.2+. `azure.yaml` is author
 
 First choose the target subscription, tenant, supported region, and environment name. Keep Foundry, model availability, hosted-agent support, and service quotas aligned. The configured model is GPT-5.4-mini, model version `2026-03-17`, GlobalStandard capacity `100`; capacity is a throughput allocation, not prepaid inference or guaranteed application throughput.
 
+The configuration also declares `optimizer-gpt-5.4` (GPT-5.4 version
+`2026-03-05`, GlobalStandard capacity `100`) for optimization reasoning, not live
+Fibey responses. Confirm its separate regional quota and usage-based costs
+before provisioning. If optimization is not required, remove that deployment
+from both `azure.yaml` and `infra/foundry/main.parameters.json` before the first
+provision. Hosted instructions/model now come from the reviewed
+`.agent_configs/baseline/`; see [optimization preparation](docs/local-development.md#prepare-hosted-agent-optimization)
+before changing or promoting candidates.
+
 Separate the permissions to deploy infrastructure from the permissions to use its data. Contributor does not grant role-assignment rights, and successfully creating a resource does not prove model invocation, image pull, or document retrieval works.
 
 | Requirement | Prepare before deployment |
 |---|---|
 | Tooling | Azure CLI, PowerShell 7.2+, `azd >=1.34.0`, and the `azure.ai.agents` extension version required by `azure.yaml` (`>=1.0.0-beta.9`) |
-| Extension capabilities | Project/hosted-agent provisioning plus `azd ai connection create`, `azd ai toolbox deploy`, and `azd ai toolbox publish` |
+| Extension capabilities | Project/hosted-agent provisioning plus `azd ai connection create`, `azd ai toolbox show`, and `azd ai toolbox publish` |
 | Local checks | Python 3.12+, uv, Node.js 24 LTS; use existing dependency locks |
 | Azure access | Resource provisioning permissions at the intended scope and permission to create the required scoped role assignments |
 | Image builds | Operator permission to submit remote ACR builds and publish images; separate runtime pull permissions |
@@ -26,6 +35,8 @@ Separate the permissions to deploy infrastructure from the permissions to use it
 If a model capacity change is necessary, review both `azure.yaml` and `infra/foundry/main.parameters.json`; keep them aligned. Multi-tool briefings consume more tokens and requests than a single lookup. Do not silently change regions, subscriptions, or model versions to work around a quota failure.
 
 Store credentials only in ignored local azd configuration or an approved secret store. Disable shell transcripts, tracing, and CLI debug logging while handling secrets. Do not print all environment values into a build log, put keys in prompts, or commit `.env`, `.azure/`, or `.foundry/` metadata.
+
+Current Foundry extensions no longer accept the generic provision-time `connections` / `connectionCredentials` Bicep contract. The Foundry layer provisions only the system ACR connection. Create the knowledge and operational tool connections later with the setup scripts below, after their protected endpoints exist.
 
 ## Select the environment and provision Foundry
 
@@ -95,7 +106,7 @@ Do not enable the ACR admin password or Foundry/Search account keys to bypass id
 azd provision infra
 ```
 
-This creates five supporting apps with system-assigned identities and registry associations. When a `SERVICE_*_IMAGE_NAME` setting is empty, the module uses a public placeholder image on port 80 and omits application-specific probes. These are **not yet the running Fibey applications**.
+This creates five supporting apps with system-assigned identities. When a `SERVICE_*_IMAGE_NAME` setting is empty, the module uses a public placeholder image on port 80 and omits application-specific probes and private registry associations. ACA validates registry credentials even for a public image: associating the registry before the app's identity has its pull role would block creation and prevent the dependent role assignment. These are **not yet the running Fibey applications**.
 
 Once the actual UI hostname is known, configure the Entra application's web redirect URI as `https://<ui-host>/.auth/login/aad/callback`. Keep the explicit allowed-user object ID. Do not broaden access to everyone in the tenant merely to get past sign-in.
 
@@ -103,7 +114,7 @@ Once the actual UI hostname is known, configure the Entra application's web redi
 
 Role-based access control (RBAC) is scoped to an identity and resource, not inherited from a successful browser login. Inspect the assignments declared in `infra/modules/access.bicep` and the Foundry modules, then verify their effective presence in the target environment. New assignments can take time to propagate.
 
-There are two independent image-pull requirements: a role granting registry access and an ACA registry association choosing the identity used for that access. The app module sets `configuration.registries` with the registry server and `identity: system`; verify both before publishing and switching images.
+There are two independent image-pull requirements: a role granting registry access and an ACA registry association choosing the identity used for that access. Verify all five pull roles after placeholder provisioning, before publishing. The second infrastructure pass sets `configuration.registries` with the registry server and `identity: system` together with each real image; verify both after switching images.
 
 | Principal | Scope and declared/required access |
 |---|---|
@@ -181,7 +192,7 @@ The gateway requires `AGENT_MODE=hosted`, `HOSTED_AGENT_ENDPOINT=<project-endpoi
 
 The document pipeline is separate from container deployment. The knowledge script uploads the eight bundled Markdown files to the private `foundry-iq-docs` blob container, configures a Search data source/index/indexer, waits for a new successful indexing run, and creates the knowledge source/base and Foundry connection.
 
-The toolbox script then reads the deployed work-orders OpenAPI specification and registers inventory MCP, four work-order operations, and knowledge retrieval. It stores API credentials in Foundry connections, not in the toolbox JSON. No browser service, reset/admin tool, or additional agent is created.
+The toolbox script then reads the deployed work-orders OpenAPI specification and registers inventory MCP, four work-order operations, and knowledge retrieval. It stores API credentials in Foundry connections, not in the toolbox JSON. Current extensions no longer expose `azd ai toolbox deploy`; the script uses Azure CLI bearer authentication to POST a complete immutable version to the Foundry `v1` API, then publishes and verifies it with azd. This supports reruns that update the inline OpenAPI specification without deleting the toolbox. No browser service, reset/admin tool, or additional agent is created.
 
 Optionally run configuration-only checks after the required outputs and secrets exist:
 

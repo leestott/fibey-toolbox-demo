@@ -56,7 +56,7 @@ Preserve the SSE activity sidebar, UUID session headers, bounded input validatio
 
 ## Deployment workflow
 
-Follow `docs/deployment.md` from the demo root. Provision the `foundry` layer, configure aliases and protected-service prerequisites, then run `azd provision infra` for placeholder apps on port 80 with explicit system-identity registry links. Verify every supporting app's `AcrPull` role and the remaining build/push/resource roles.
+Follow `docs/deployment.md` from the demo root. Provision the `foundry` layer, configure aliases and protected-service prerequisites, then run `azd provision infra` for public placeholder apps on port 80 without private registry associations. Verify every supporting app's `AcrPull` role and the remaining build/push/resource roles. Apply explicit system-identity registry links with the real images on the second infrastructure pass; linking the registry before the new identities have pull roles blocks placeholder creation.
 
 Use `azd publish <service>` for status-dashboard, inventory-mcp, work-orders-api, gateway, and ui. Once all five `SERVICE_*_IMAGE_NAME` settings exist, run `azd provision infra` again to apply images with actual ports/probes. Plain `azd deploy` preserves placeholder port 80 and must not be used for the initial supporting-service switch. Verify revisions, run `scripts/setup-knowledge-base.ps1` then `scripts/setup-toolbox.ps1`, and finally run `azd deploy fibey-agent`. Do not run initialization/scaffolding over an existing environment or use obsolete all-in-one deployment instructions.
 

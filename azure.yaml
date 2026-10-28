@@ -19,6 +19,14 @@ services:
               sku:
                 name: GlobalStandard
                 capacity: 100
+            - name: optimizer-gpt-5.4
+              model:
+                format: OpenAI
+                name: gpt-5.4
+                version: '2026-03-05'
+              sku:
+                name: GlobalStandard
+                capacity: 100
     fibey-agent:
         project: .
         host: azure.ai.agent
