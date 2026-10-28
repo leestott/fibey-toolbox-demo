@@ -2,7 +2,7 @@
 <#
 Run after setup-knowledge-base.ps1 and the protected inventory/work-orders services are deployed:
   pwsh -File scripts/setup-toolbox.ps1 [-EnvironmentName <name>]
-Requires azd auth login, the azd AI connection/toolbox extensions, and Foundry project
+Requires az login, azd auth login, the azd AI connection/toolbox extensions, and Foundry project
 connection/toolbox write permission. It does not provision infrastructure or assign roles.
 The selected ignored azd environment must contain INVENTORY_API_KEY and WORK_ORDERS_API_KEY.
 Values and native output stay in memory; never enable tracing/transcripts/CLI debug logging.
@@ -53,6 +53,7 @@ function Assert-HttpsEndpoint {
     }
 }
 
+if (-not (Get-Command az -ErrorAction SilentlyContinue)) { throw 'Install Azure CLI and run az login first.' }
 if (-not (Get-Command azd -ErrorAction SilentlyContinue)) { throw 'Install azd and its AI connection/toolbox extensions first.' }
 try {
     $settings = Invoke-QuietAzd (@('env', 'get-values', '--output', 'json') + $azdOptions) 'Read azd environment' |
@@ -88,7 +89,7 @@ $help = Invoke-QuietAzd @('ai', 'connection', 'create', '--help') 'Check connect
 if ($help -notmatch '--custom-key' -or $help -notmatch 'project-managed-identity' -or $help -notmatch '--force') {
     throw 'Update the azd AI connections extension: custom-keys, project-managed-identity and --force are required.'
 }
-$null = Invoke-QuietAzd @('ai', 'toolbox', 'deploy', '--help') 'Check toolbox deploy extension'
+$null = Invoke-QuietAzd @('ai', 'toolbox', 'show', '--help') 'Check toolbox extension'
 $null = Invoke-QuietAzd @('ai', 'toolbox', 'publish', '--help') 'Check toolbox publish extension'
 if ($CheckOnly) {
     Write-Host 'Configuration valid. No cloud requests or writes performed; service/spec checks require a real run.'
@@ -183,14 +184,24 @@ $renderDirectory = Join-Path (Join-Path $root '.azure') ("toolbox-render-" + [gu
 try {
     $null = New-Item -ItemType Directory -Path $renderDirectory -Force
     $rendered = Join-Path $renderDirectory 'toolbox.json'
-    $definition | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $rendered -Encoding utf8
-    # deploy upserts the full tool set, unlike create (new toolbox only) or connection add
-    # (cannot update an inline OpenAPI spec). Publish explicitly on every successful rerun.
-    $deployed = Invoke-QuietAzd (@('ai', 'toolbox', 'deploy', $rendered) + $common) 'Deploy toolbox definition' |
-        ConvertFrom-Json -AsHashtable
+    @{
+        description = $definition.description
+        tools = $definition.tools
+    } | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $rendered -Encoding utf8
+    # The current CLI has no full-definition version update command. POST creates
+    # an immutable version for both new and existing toolboxes, including OpenAPI.
+    try {
+        $text = & az rest --method post --url "$projectEndpoint/toolboxes/fibey-toolbox/versions?api-version=v1" `
+            --subscription $subscription --resource 'https://ai.azure.com' --body "@$rendered" --output json --only-show-errors 2>$null |
+            Out-String
+    } catch { throw 'Create toolbox version failed. Check Azure CLI authentication and project permissions; output suppressed.' }
+    if ($LASTEXITCODE -ne 0) {
+        throw "Create toolbox version failed (exit $LASTEXITCODE). Check Azure CLI authentication, project permissions and toolbox schema; output suppressed."
+    }
+    $deployed = $text | ConvertFrom-Json -AsHashtable
     $version = $deployed.version
     if ($version -is [System.Collections.IDictionary]) { $version = $version.version }
-    if ([string]::IsNullOrWhiteSpace($version)) { throw 'Toolbox deploy returned no version. Inspect azd ai toolbox versions list fibey-toolbox before publishing.' }
+    if ([string]::IsNullOrWhiteSpace($version)) { throw 'Toolbox creation returned no version. Inspect azd ai toolbox versions list fibey-toolbox before publishing.' }
     $null = Invoke-QuietAzd (@('ai', 'toolbox', 'publish', 'fibey-toolbox', [string] $version) + $common) 'Publish toolbox default version'
     $shown = Invoke-QuietAzd (@('ai', 'toolbox', 'show', 'fibey-toolbox') + $common) 'Verify toolbox default version' |
         ConvertFrom-Json -AsHashtable

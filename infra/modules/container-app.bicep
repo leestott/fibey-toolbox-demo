@@ -57,7 +57,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         transport: 'auto'
         allowInsecure: false
       }
-      registries: [
+      registries: empty(containerImage) ? [] : [
         {
           server: registryServer
           identity: 'system'

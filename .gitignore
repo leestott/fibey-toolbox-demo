@@ -442,3 +442,7 @@ dist/
 .env.copy
 .azure/
 .foundry/
+
+# Keep the reviewed baseline; optimizer candidates remain local until reviewed.
+.agent_configs/*
+!.agent_configs/baseline/

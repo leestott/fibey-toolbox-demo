@@ -1,11 +1,87 @@
 import os
+import json
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from agent_framework import InlineSkill, SkillFrontmatter, SkillsSourceContext
 
 from fibey.agent import hosted
+
+
+OPTIMIZATION_ENV = {
+    "OPTIMIZATION_CONFIG": "",
+    "OPTIMIZATION_CANDIDATE_ID": "",
+    "OPTIMIZATION_RESOLVE_ENDPOINT": "",
+    "OPTIMIZATION_LOCAL_DIR": "",
+}
+
+
+class HostedOptimizationTests(unittest.TestCase):
+    def setUp(self):
+        self.environment = patch.dict(os.environ, OPTIMIZATION_ENV)
+        self.environment.start()
+        self.addCleanup(self.environment.stop)
+
+    def test_baseline_preserves_existing_prompt_model_and_tool_skill_boundaries(self):
+        config = hosted._load_optimization_config()
+        original = Path(hosted.__file__).parent / "prompts" / "system_prompt.md"
+        self.assertEqual(config.instructions, original.read_text(encoding="utf-8").strip())
+        self.assertEqual(config.model, "gpt-5.4-mini")
+        self.assertIsNone(config.temperature)
+        self.assertFalse(config.has_skills)
+        self.assertEqual(config.tool_definitions, [])
+
+    def test_inline_candidate_overrides_baseline_and_closes_resolver_credential(self):
+        candidate = {"model": "candidate-model", "instructions": "Candidate instructions"}
+        with (
+            patch.dict(os.environ, {"OPTIMIZATION_CONFIG": json.dumps(candidate)}),
+            patch.object(hosted, "SyncDefaultAzureCredential") as credential_factory,
+        ):
+            config = hosted._load_optimization_config()
+        self.assertEqual(config.model, "candidate-model")
+        self.assertEqual(config.compose_instructions(), "Candidate instructions")
+        credential_factory.return_value.__exit__.assert_called_once()
+
+    def test_invalid_inline_candidate_fails_without_baseline_fallback(self):
+        with patch.dict(os.environ, {"OPTIMIZATION_CONFIG": "{invalid"}):
+            with self.assertRaises(ValueError):
+                hosted._load_optimization_config()
+
+    def test_missing_model_or_instructions_fail_explicitly(self):
+        for candidate in (
+            {"instructions": "Instructions"},
+            {"model": "model"},
+            {"model": "model", "instructions": " "},
+        ):
+            with self.subTest(candidate=candidate):
+                with patch.dict(os.environ, {"OPTIMIZATION_CONFIG": json.dumps(candidate)}):
+                    with self.assertRaises(ValueError):
+                        hosted._load_optimization_config()
+
+    def test_missing_config_fails_explicitly(self):
+        with TemporaryDirectory() as directory:
+            with patch.dict(os.environ, {"OPTIMIZATION_LOCAL_DIR": directory}):
+                with self.assertRaisesRegex(RuntimeError, "Missing optimization config"):
+                    hosted._load_optimization_config()
+
+    def test_missing_local_candidate_does_not_evaluate_baseline_as_candidate(self):
+        with patch.dict(os.environ, {"OPTIMIZATION_CANDIDATE_ID": "missing-candidate"}):
+            with self.assertRaisesRegex(RuntimeError, "refusing baseline fallback"):
+                hosted._load_optimization_config()
+
+    def test_skill_and_tool_candidates_are_rejected_instead_of_ignored(self):
+        for extra in (
+            {"skills": [{"name": "new-skill", "description": "Skill", "body": "Instructions"}]},
+            {"tools": [{"type": "function", "function": {"name": "replacement"}}]},
+        ):
+            candidate = {"model": "model", "instructions": "Instructions", **extra}
+            with self.subTest(extra=extra):
+                with patch.dict(os.environ, {"OPTIMIZATION_CONFIG": json.dumps(candidate)}):
+                    with self.assertRaisesRegex(ValueError, "keep toolbox skills and tools unchanged"):
+                        hosted._load_optimization_config()
 
 
 class HostedSkillsTests(unittest.IsolatedAsyncioTestCase):
@@ -70,6 +146,11 @@ class HostedSkillsTests(unittest.IsolatedAsyncioTestCase):
 
 
 class HostedLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.environment = patch.dict(os.environ, OPTIMIZATION_ENV)
+        self.environment.start()
+        self.addCleanup(self.environment.stop)
+
     async def test_server_uses_supported_host_and_closes_all_resources_on_failure(self):
         credential = AsyncMock()
         credential.__aenter__.return_value = credential
@@ -101,7 +182,7 @@ class HostedLifecycleTests(unittest.IsolatedAsyncioTestCase):
             options = agent_factory.call_args.kwargs
             self.assertEqual(options["default_options"], {"store": False})
             self.assertIs(options["tools"], toolbox)
-            self.assertEqual(options["instructions"], hosted._load_system_prompt())
+            self.assertEqual(options["instructions"], hosted._load_optimization_config().compose_instructions())
             self.assertEqual(len(options["context_providers"]), 1)
         server.run_async.assert_awaited_once()
         toolbox.close.assert_awaited_once()
@@ -131,6 +212,35 @@ class HostedLifecycleTests(unittest.IsolatedAsyncioTestCase):
             telemetry.assert_called_once_with(enable_sensitive_data=True, enable_message_events=True)
         self.assertTrue(captured[0].client.client.is_closed())
         self.assertIsInstance(captured[0].mcp_tools[0], hosted.FoundryToolbox)
+
+    async def test_host_consumes_candidate_model_instructions_and_optional_temperature(self):
+        config = hosted.OptimizationConfig(
+            model="candidate-model", instructions="Candidate instructions", temperature=1.0,
+        )
+        credential = AsyncMock()
+        credential.__aenter__.return_value = credential
+        project = AsyncMock()
+        project.__aenter__.return_value = project
+        client = SimpleNamespace(client=SimpleNamespace(close=AsyncMock()))
+        toolbox = SimpleNamespace(session=None, close=AsyncMock())
+        with (
+            patch.object(hosted, "_load_optimization_config", return_value=config),
+            patch.object(hosted, "configure_otel_providers"),
+            patch.dict(os.environ, {"FOUNDRY_PROJECT_ENDPOINT": "https://example.test", "SKILLS_SOURCE": "file"}),
+            patch.object(hosted, "DefaultAzureCredential", return_value=credential),
+            patch.object(hosted, "AIProjectClient", return_value=project),
+            patch.object(hosted, "FoundryChatClient", return_value=client) as client_factory,
+            patch.object(hosted, "FoundryToolbox", return_value=toolbox),
+            patch.object(hosted, "Agent") as agent_factory,
+            patch.object(hosted, "ResponsesHostServer") as server_factory,
+        ):
+            server_factory.return_value.run_async = AsyncMock()
+            await hosted._serve()
+        self.assertEqual(client_factory.call_args.kwargs["model"], "candidate-model")
+        options = agent_factory.call_args.kwargs
+        self.assertEqual(options["instructions"], "Candidate instructions")
+        self.assertEqual(options["default_options"], {"store": False, "temperature": 1.0})
+        self.assertIs(options["tools"], toolbox)
 
 
 if __name__ == "__main__":

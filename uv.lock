@@ -265,6 +265,20 @@ wheels = [
 ]
 
 [[package]]
+name = "azure-ai-agentserver-optimization"
+version = "1.0.0b1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-core" },
+    { name = "azure-identity" },
+    { name = "pyyaml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/99/2b/7e9b8472cfa31df24e046d10b5fd69792875a15dcc057d953d34c185b2ae/azure_ai_agentserver_optimization-1.0.0b1.tar.gz", hash = "sha256:a96205096f8294931bcd00623ee51e5ffa19ad3b1a48ad79f0d644709df092c3", size = 34532, upload-time = "2026-06-01T22:01:00.257Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cc/76/ced0f768872f367d73eeb20be21b7fc49cd121d3c473727ffc8ba25df9a6/azure_ai_agentserver_optimization-1.0.0b1-py3-none-any.whl", hash = "sha256:ff6b204a383d63acacfc3b373000f4c16cce9237765a4e27f9ae7b633e89dbb5", size = 18026, upload-time = "2026-06-01T22:01:01.418Z" },
+]
+
+[[package]]
 name = "azure-ai-agentserver-responses"
 version = "2.2.0b1"
 source = { registry = "https://pypi.org/simple" }
@@ -621,6 +635,7 @@ dependencies = [
     { name = "agent-framework-core" },
     { name = "agent-framework-foundry" },
     { name = "agent-framework-foundry-hosting" },
+    { name = "azure-ai-agentserver-optimization" },
     { name = "azure-ai-projects" },
     { name = "azure-identity" },
     { name = "fastapi" },
@@ -637,6 +652,7 @@ requires-dist = [
     { name = "agent-framework-core", specifier = "==1.18.0" },
     { name = "agent-framework-foundry", specifier = "==1.13.0" },
     { name = "agent-framework-foundry-hosting", specifier = "==1.0.0b260910" },
+    { name = "azure-ai-agentserver-optimization", specifier = "==1.0.0b1" },
     { name = "azure-ai-projects", specifier = ">=1.0.0" },
     { name = "azure-identity", specifier = ">=1.17.0" },
     { name = "fastapi", specifier = ">=0.115.0" },

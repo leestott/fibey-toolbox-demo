@@ -12,6 +12,9 @@ __pycache__
 *.p12
 .azure
 .foundry
+.agent_configs/*
+!.agent_configs/baseline/
+!.agent_configs/baseline/**
 node_modules
 docs
 tests

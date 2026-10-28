@@ -1,8 +1,9 @@
 """Fibey's Foundry-hosted Responses entrypoint.
 
-Requires FOUNDRY_PROJECT_ENDPOINT, AZURE_AI_MODEL_DEPLOYMENT_NAME and either
-TOOLBOX_ENDPOINT or TOOLBOX_NAME. SKILLS_SOURCE defaults to auto (published
-skills with bundled fallback); file skips discovery, mcp requires published skills.
+Requires FOUNDRY_PROJECT_ENDPOINT and either TOOLBOX_ENDPOINT or TOOLBOX_NAME.
+Hosted instructions and model come from .agent_configs/. SKILLS_SOURCE defaults
+to auto (published skills with bundled fallback); file skips discovery, mcp
+requires published skills.
 Set ENABLE_SENSITIVE_TELEMETRY=true only to explicitly opt into content tracing.
 """
 
@@ -25,7 +26,9 @@ from agent_framework import (
 from agent_framework.foundry import FoundryChatClient
 from agent_framework.observability import configure_otel_providers
 from agent_framework_foundry_hosting import FoundryToolbox, ResponsesHostServer
+from azure.ai.agentserver.optimization import OptimizationConfig, load_config
 from azure.ai.projects.aio import AIProjectClient
+from azure.identity import DefaultAzureCredential as SyncDefaultAzureCredential
 from azure.identity.aio import DefaultAzureCredential
 from dotenv import load_dotenv
 
@@ -33,8 +36,8 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT_PATH = Path(__file__).parent / "prompts" / "system_prompt.md"
 SKILLS_PATH = Path(__file__).parent / "skills"
+AGENT_CONFIGS_PATH = Path(__file__).resolve().parents[3] / ".agent_configs"
 
 
 class FibeySkillsSource(SkillsSource):
@@ -79,8 +82,26 @@ class FibeySkillsSource(SkillsSource):
         return list(merged.values())
 
 
-def _load_system_prompt() -> str:
-    return SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
+def _load_optimization_config() -> OptimizationConfig:
+    # azd applies candidates at the service root, not beside this module entrypoint.
+    config_dir = os.getenv("OPTIMIZATION_LOCAL_DIR") or str(AGENT_CONFIGS_PATH)
+    with SyncDefaultAzureCredential() as credential:
+        config = load_config(config_dir=config_dir, credential=credential)
+    if config is None:
+        raise RuntimeError("Missing optimization config; package .agent_configs/baseline/")
+    if not config.model or not config.model.strip():
+        raise ValueError("Optimization config requires a model deployment name")
+    if not config.instructions or not config.instructions.strip():
+        raise ValueError("Optimization config requires non-empty instructions")
+    if config.has_skills or config.tool_definitions:
+        raise ValueError("Fibey optimization supports instructions and model only; keep toolbox skills and tools unchanged")
+    requested = os.getenv("OPTIMIZATION_CANDIDATE_ID", "").strip()
+    if requested and config.source.startswith("local:"):
+        if Path(config.source.removeprefix("local:")).name != requested:
+            raise RuntimeError("Requested optimization candidate was not loaded; refusing baseline fallback")
+    elif requested and config.candidate_id != requested and config.source != "env:OPTIMIZATION_CONFIG":
+        raise RuntimeError("Requested optimization candidate was not loaded")
+    return config
 
 
 async def _serve() -> None:
@@ -90,6 +111,7 @@ async def _serve() -> None:
         enable_message_events=sensitive,
     )
     logger.info("OpenTelemetry enabled; sensitive content tracing=%s", sensitive)
+    config = await asyncio.to_thread(_load_optimization_config)
 
     async with AsyncExitStack() as resources:
         credential = await resources.enter_async_context(DefaultAzureCredential())
@@ -99,7 +121,7 @@ async def _serve() -> None:
         ))
         client = FoundryChatClient(
             project_client=project,
-            model=os.environ["AZURE_AI_MODEL_DEPLOYMENT_NAME"],
+            model=config.model,
         )
         resources.push_async_callback(client.client.close)
         # The SDK forwards per-request platform context (including call-id) and
@@ -116,10 +138,13 @@ async def _serve() -> None:
         agent = Agent(
             client=client,
             name="fibey",
-            instructions=_load_system_prompt(),
+            instructions=config.compose_instructions(),
             tools=toolbox,
             context_providers=[skills],
-            default_options={"store": False},
+            default_options={
+                "store": False,
+                **({"temperature": config.temperature} if config.temperature is not None else {}),
+            },
         )
         # The host owns agent/tool lifecycle and retrieves history from Foundry.
         # History retrieval failures must fail the turn, not silently erase context.
